@@ -1,8 +1,8 @@
-# BHS Storehouse
+# WP PastPerfect
 
 A WordPress plugin for managing and serving assets exported from PastPerfect Museum Software or other software that generates valid XML.
 
-Built for the [Brooklyn Historical Society](http://brooklynhistory.org) by [Hard G](https://hardg.com).
+Built for the [Brooklyn Historical Society](http://brooklynhistory.org) by [Hard G](https://hardg.com) and then updated in 2026 for the Russian River Historical Society.
 
 Features:
 
@@ -39,8 +39,8 @@ Features:
 
 Requirements:
 
-* PHP 5.3+
-* WordPress 4.4+
+* PHP 7.4.33
+* WordPress 6.5+
 
 ## Use
 
@@ -50,6 +50,4 @@ Upload PastPerfect export documents at Dashboard > PastPerfect Records > Import.
 
 ### Accessing records
 
-Records are available at an API endpoint with the format `/wp-json/bhs/v1/record/[identifier]`. Be sure to flush your permalinks after activating the plugin, to ensure that the endpoint works (Dashboard > Settings > Permalinks > Save).
-
-There is a companion plugin that enables WordPress authors to access and display Storehouse data via shortcodes or template functions. See [bhs-client](https://github.com/bhslibrary/bhs-client).
+Records are available at an API endpoint with the format `/wp-json/wppp/v2`. Be sure to flush your permalinks after activating the plugin, to ensure that the endpoint works (Dashboard > Settings > Permalinks > Save).
