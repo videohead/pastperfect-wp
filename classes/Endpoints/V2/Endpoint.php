@@ -34,6 +34,7 @@ class Endpoint {
 			array(
 				'methods' => 'GET',
 				'callback' => array( $this, 'get_record' ),
+				'permission_callback' => '__return_true',
 			)
 		);
 	}
