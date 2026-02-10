@@ -1,0 +1,21 @@
+#wppp-import-message {
+	width: 50%;
+	height: 400px;
+	border: 2px solid #aaa;
+	padding: 5px;
+	overflow: scroll;
+	background: #fff;
+	margin-top: 2em;
+}
+
+.wppp-import-record-status {
+	font-weight: bold;
+}
+
+.wppp-import-record-success {
+	color: green;
+}
+
+.wppp-import-record-failure {
+	color: #d11141;
+}
