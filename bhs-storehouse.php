@@ -8,6 +8,8 @@
  * Plugin URI: https://brooklynhistory.org
  * Text Domain: bhs-storehouse
  * Domain Path: /languages
+ * Requires at least: 5.0
+ * Requires PHP: 7.4
  * @package bhs-storehouse
  */
 
@@ -22,7 +24,7 @@ define( 'BHSSH_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
  * @since 1.0.0
  */
 function bhssh_bootstrap() {
-	if ( version_compare( PHP_VERSION, '5.3', '<' ) && current_user_can( 'install_plugins' ) ) {
+	if ( version_compare( PHP_VERSION, '7.4', '<' ) && current_user_can( 'install_plugins' ) ) {
 		add_action( 'admin_notices', 'bhssh_php_admin_notice' );
 		return;
 	}
@@ -44,7 +46,7 @@ add_action( 'plugins_loaded', 'bhssh_bootstrap' );
 function bhssh_php_admin_notice() {
 	?>
 	<div class="notice notice-error is-dismissable">
-		<p><?php esc_html_e( 'BHS Storehouse requires PHP 5.3 or higher. Please contact your webhost.', 'bhs-storehouse' ); ?></p>
+		<p><?php esc_html_e( 'BHS Storehouse requires PHP 7.4 or higher. Please contact your webhost.', 'bhs-storehouse' ); ?></p>
 	</div>
 	<?php
 }
