@@ -16,25 +16,30 @@
 		});
 
 		// Next: kick off first step. Should happen in a separate method.
-		importChunk( data.run );
+		importChunk( data.run, data.trialRun );
 	}
 
-	importChunk = function( run ) {
+	importChunk = function( run, trialRun ) {
 		$.ajax( {
 			url: ajaxurl + '?action=bhssh_import_chunk',
 			data: {
-				run: run
+				run: run,
+				'trial-run': trialRun
 			},
 			type: 'POST',
 			success: function( response ) {
 				if ( response.success ) {
 					$progressbar.progressbar( 'value', response.data.pct );
-					printLog( response.data.results );
+					printLog( response.data.results, trialRun );
 
 					if ( response.data.pct < 100 ) {
-						importChunk( response.data.run );
+						importChunk( response.data.run, trialRun );
 					} else {
-						$successMessageDiv.append( '<p>Complete!</p>' );
+						if ( trialRun ) {
+							$successMessageDiv.append( '<p><strong>Trial run complete! No records were created or updated.</strong></p>' );
+						} else {
+							$successMessageDiv.append( '<p>Complete!</p>' );
+						}
 					}
 				} else {
 					// todo
@@ -43,7 +48,7 @@
 		} );
 	}
 
-	printLog = function( results ) {
+	printLog = function( results, trialRun ) {
 		var html = '';
 		var r;
 
@@ -52,11 +57,19 @@
 			switch ( r.status ) {
 				// todo localization
 				case 'created' :
-					html += '<span class="bhs-import-record-status bhs-import-record-success">Success</span>: Created record ' + r.identifer;
+					if ( trialRun ) {
+						html += '<span class="bhs-import-record-status bhs-import-record-success">Trial</span>: Would create record ' + r.identifer;
+					} else {
+						html += '<span class="bhs-import-record-status bhs-import-record-success">Success</span>: Created record ' + r.identifer;
+					}
 				break;
 
 				case 'updated' :
-					html += '<span class="bhs-import-record-status bhs-import-record-success">Success</span>: Updated record ' + r.identifer;
+					if ( trialRun ) {
+						html += '<span class="bhs-import-record-status bhs-import-record-success">Trial</span>: Would update record ' + r.identifer;
+					} else {
+						html += '<span class="bhs-import-record-status bhs-import-record-success">Success</span>: Updated record ' + r.identifer;
+					}
 				break;
 
 				case 'failed' :
@@ -89,6 +102,7 @@
 			} );
 
 			data.append( 'bhs-import-nonce', $( '#bhs-import-nonce' ).val() );
+			data.append( 'bhs-trial-run', $( '#bhs-trial-run' ).is(':checked') ? '1' : '0' );
 
 			$.ajax( {
 				url: ajaxurl + '?action=bhssh_import_upload',

@@ -204,6 +204,13 @@ class Admin {
 					<p><?php esc_html_e( 'Upload a PastPerfect-generated XML file to begin the import process.', 'bhs-storehouse' ); ?></p>
 					<input type="file" name="bhs-xml" id="bhs-xml" />
 
+					<p>
+						<label>
+							<input type="checkbox" name="bhs-trial-run" id="bhs-trial-run" value="1" />
+							<?php esc_html_e( 'Trial run (parse and count records without creating them)', 'bhs-storehouse' ); ?>
+						</label>
+					</p>
+
 					<p class="submit">
 						<input type="submit" id="bhs-import-submit" class="button button-secondary" value="<?php esc_attr_e( 'Begin Import', 'bhs-storehouse' ); ?>" />
 					</p>
@@ -393,17 +400,21 @@ class Admin {
 			$x->next( $this->record_element );
 		}
 
+		$trial_run = isset( $_POST['bhs-trial-run'] ) && '1' === $_POST['bhs-trial-run'];
+
 		$run_key = 'bhs_import_run_' . $timestamp;
 		$run_data = array(
 			'xml' => $dest,
 			'last' => 0,
 			'count' => $count,
+			'trial_run' => $trial_run,
 		);
 		update_option( $run_key, $run_data );
 
 		$retval = array(
 			'run' => $timestamp,
 			'pct' => 0,
+			'trialRun' => $trial_run,
 		);
 
 		wp_send_json_success( $retval );
@@ -424,6 +435,7 @@ class Admin {
 		}
 
 		$last = $run_data['last'];
+		$trial_run = isset( $run_data['trial_run'] ) && $run_data['trial_run'];
 
 		$x = new \XMLReader();
 		$x->open( $run_data['xml'] );
@@ -474,7 +486,13 @@ class Admin {
 
 			$record->set_up_from_raw_atts( $atts );
 
-			$saved = $record->save();
+			// Only save if not in trial run mode.
+			if ( ! $trial_run ) {
+				$saved = $record->save();
+			} else {
+				// In trial run mode, we simulate success.
+				$saved = true;
+			}
 
 			$result = array(
 				'identifer' => $id,
