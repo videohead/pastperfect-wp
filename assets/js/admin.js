@@ -38,7 +38,10 @@
 	const importChunk = ( run ) => {
 		$.ajax( {
 			url: `${ ajaxurl }?action=wppp_import_chunk`,
-			data: { run },
+			data: { 
+				run: run,
+				nonce: $( '#wppp-import-nonce' ).val()
+			},
 			type: 'POST',
 			success: ( response ) => {
 				if ( response.success ) {

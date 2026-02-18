@@ -1,0 +1,73 @@
+/**
+ * Taxonomy Admin CSS
+ */
+
+.wppp-taxonomy-management {
+	display: grid;
+	grid-template-columns: 2fr 1fr;
+	gap: 2rem;
+	margin-top: 1.5rem;
+}
+
+.wppp-taxonomy-list,
+.wppp-taxonomy-form {
+	background: #fff;
+	padding: 1.5rem;
+	border: 1px solid #ccd0d4;
+	box-shadow: 0 1px 1px rgba(0, 0, 0, 0.04);
+}
+
+.wppp-taxonomy-list h2,
+.wppp-taxonomy-form h2 {
+	margin-top: 0;
+	padding-bottom: 0.75rem;
+	border-bottom: 1px solid #dcdcde;
+}
+
+.wppp-taxonomy-list table {
+	margin-top: 1rem;
+}
+
+.wppp-taxonomy-list .button-link-delete {
+	color: #d63638;
+}
+
+.wppp-taxonomy-list .button-link-delete:hover {
+	color: #b32d2e;
+}
+
+.wppp-taxonomy-form .required {
+	color: #d63638;
+}
+
+.wppp-taxonomy-form .form-table th {
+	padding-left: 0;
+}
+
+.wppp-taxonomy-form .form-table td {
+	padding-right: 0;
+}
+
+#wppp-taxonomy-message {
+	padding: 0.75rem;
+	margin-top: 1rem;
+	border-left: 4px solid;
+}
+
+#wppp-taxonomy-message.success {
+	background: #f0f6fc;
+	border-color: #0071a1;
+	color: #043959;
+}
+
+#wppp-taxonomy-message.error {
+	background: #fcf0f1;
+	border-color: #d63638;
+	color: #3c434a;
+}
+
+@media screen and (max-width: 1200px) {
+	.wppp-taxonomy-management {
+		grid-template-columns: 1fr;
+	}
+}

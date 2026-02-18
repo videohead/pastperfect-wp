@@ -9,6 +9,20 @@ namespace WP\PastPerfect;
  */
 class Schema {
 	/**
+	 * Taxonomy manager instance.
+	 *
+	 * @var Taxonomy_Manager
+	 */
+	protected $taxonomy_manager;
+
+	/**
+	 * Constructor.
+	 */
+	public function __construct() {
+		$this->taxonomy_manager = new Taxonomy_Manager();
+	}
+
+	/**
 	 * Hook into WP.
 	 *
 	 * @since 1.0.0
@@ -29,8 +43,8 @@ class Schema {
 		register_post_type(
 			'wppp_record',
 			array(
-				'label'       => __( 'PastPerfect Records', 'wp-pastperfect' ),
-				'labels'      => array(
+				'label'        => __( 'PastPerfect Records', 'wp-pastperfect' ),
+				'labels'       => array(
 					'name'               => __( 'PastPerfect Records', 'wp-pastperfect' ),
 					'all_items'          => __( 'Manage Records', 'wp-pastperfect' ),
 					'singular_name'      => __( 'PastPerfect Record', 'wp-pastperfect' ),
@@ -42,13 +56,13 @@ class Schema {
 					'not_found'          => __( 'No PastPerfect Records found', 'wp-pastperfect' ),
 					'not_found_in_trash' => __( 'No PastPerfect Records found in Trash.', 'wp-pastperfect' ),
 				),
-				'menu_icon'   => 'dashicons-book-alt',
-				'public'      => true,
+				'menu_icon'    => 'dashicons-book-alt',
+				'public'       => true,
 				'show_in_rest' => true,
-				'rest_base'   => 'pastperfect-records',
-				'supports'    => array( 'title', 'editor', 'custom-fields' ),
-				'has_archive' => true,
-				'rewrite'     => array(
+				'rest_base'    => 'pastperfect-records',
+				'supports'     => array( 'title', 'editor', 'custom-fields' ),
+				'has_archive'  => true,
+				'rewrite'      => array(
 					'slug'       => 'pastperfect-record',
 					'with_front' => false,
 				),
@@ -57,67 +71,30 @@ class Schema {
 	}
 
 	/**
-	 * Register taxonomies.
-	 *
-	 * - wppp_subject_subject is <subject_subject>
-	 * - wppp_subject_people is <subject_people>
-	 * - wppp_subject_places is <subject_places>
-	 * - wppp_subject_genre is <subject_genre>
+	 * Register taxonomies dynamically from Taxonomy_Manager.
 	 *
 	 * @since 1.0.0
 	 */
 	public function register_taxonomies() {
-		register_taxonomy(
-			'wppp_subject_subject',
-			'wppp_record',
-			array(
-				'public'       => true,
-				'show_in_rest' => true,
-				'hierarchical' => false,
+		$taxonomies = $this->taxonomy_manager->get_taxonomies();
+
+		foreach ( $taxonomies as $taxonomy ) {
+			$args = array(
+				'public'       => ! empty( $taxonomy['public'] ),
+				'show_ui'      => ! empty( $taxonomy['show_ui'] ),
+				'show_in_rest' => ! empty( $taxonomy['show_in_rest'] ),
+				'hierarchical' => ! empty( $taxonomy['hierarchical'] ),
 				'labels'       => array(
-					'name'          => __( 'Subjects', 'wp-pastperfect' ),
-					'singular_name' => __( 'Subject', 'wp-pastperfect' ),
+					'name'          => $taxonomy['name'],
+					'singular_name' => $taxonomy['singular'],
 				),
-			)
-		);
-		register_taxonomy(
-			'wppp_subject_people',
-			'wppp_record',
-			array(
-				'public'       => true,
-				'show_in_rest' => true,
-				'hierarchical' => false,
-				'labels'       => array(
-					'name'          => __( 'People', 'wp-pastperfect' ),
-					'singular_name' => __( 'Person', 'wp-pastperfect' ),
-				),
-			)
-		);
-		register_taxonomy(
-			'wppp_subject_places',
-			'wppp_record',
-			array(
-				'public'       => true,
-				'show_in_rest' => true,
-				'hierarchical' => false,
-				'labels'       => array(
-					'name'          => __( 'Places', 'wp-pastperfect' ),
-					'singular_name' => __( 'Place', 'wp-pastperfect' ),
-				),
-			)
-		);
-		register_taxonomy(
-			'wppp_subject_genre',
-			'wppp_record',
-			array(
-				'public'       => true,
-				'show_in_rest' => true,
-				'hierarchical' => false,
-				'labels'       => array(
-					'name'          => __( 'Genres', 'wp-pastperfect' ),
-					'singular_name' => __( 'Genre', 'wp-pastperfect' ),
-				),
-			)
-		);
+			);
+
+			register_taxonomy(
+				$taxonomy['slug'],
+				'wppp_record',
+				$args
+			);
+		}
 	}
 }

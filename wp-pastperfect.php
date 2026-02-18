@@ -13,7 +13,7 @@
  * @package wp-pastperfect
  */
 
-define( 'WPPP_VERSION', '0.2.7' );
+define( 'WPPP_VERSION', '0.2.9' );
 define( 'WPPP_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
 
 /**

@@ -390,14 +390,48 @@ class Record {
 		$basename = '';
 		if ( $matches ) {
 			$basename = $matches[1];
-		}
-		return $this->asset_base . $basename;
+		}		$basename = $this->sanitize_filename_for_url( $basename );		return $this->asset_base . $basename;
 	}
 
 	public function convert_filename_to_asset_path( $value ) {
 		$value = str_replace( '\\', '/', $value );
-		$value = $this->asset_base . basename( $value );
+		$basename = basename( $value );
+		$basename = $this->sanitize_filename_for_url( $basename );
+		$value = $this->asset_base . $basename;
 		return $value;
+	}
+
+	/**
+	 * Sanitize filename for URLs by replacing periods with hyphens.
+	 *
+	 * WordPress convention is to use hyphens in URLs. PastPerfect identifiers
+	 * often contain periods (e.g., "98.3.6"), which should be converted to
+	 * hyphens for cleaner URLs (e.g., "98-3-6.jpg").
+	 *
+	 * @since 1.0.0
+	 *
+	 * @param string $filename Original filename.
+	 * @return string Sanitized filename with periods replaced by hyphens (except extension).
+	 */
+	protected function sanitize_filename_for_url( $filename ) {
+		if ( empty( $filename ) ) {
+			return $filename;
+		}
+
+		// Split filename and extension
+		$pathinfo = pathinfo( $filename );
+		$name = $pathinfo['filename'];
+		$extension = isset( $pathinfo['extension'] ) ? $pathinfo['extension'] : '';
+
+		// Replace periods with hyphens in the filename (not extension)
+		$name = str_replace( '.', '-', $name );
+
+		// Reconstruct with extension
+		if ( $extension ) {
+			return $name . '.' . $extension;
+		}
+
+		return $name;
 	}
 
 	public function addslashes_deep( $value ) {

@@ -7,6 +7,9 @@ class App {
 		if ( is_admin() ) {
 			$admin = new Admin();
 			$admin->set_up_hooks();
+
+			$taxonomy_admin = new Taxonomy_Admin();
+			$taxonomy_admin->set_up_hooks();
 		}
 
 		$schema = new Schema();

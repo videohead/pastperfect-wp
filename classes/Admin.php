@@ -9,9 +9,34 @@ namespace WP\PastPerfect;
  */
 class Admin {
 	/**
-	 * Name for top-level record element.
+	 * Import handler instance.
+	 *
+	 * @var Import_Handler
 	 */
-	protected $record_element = 'record';
+	protected $import_handler;
+
+	/**
+	 * AJAX import handler instance.
+	 *
+	 * @var Ajax_Import_Handler
+	 */
+	protected $ajax_import_handler;
+
+	/**
+	 * Meta box handler instance.
+	 *
+	 * @var Meta_Box
+	 */
+	protected $meta_box;
+
+	/**
+	 * Constructor.
+	 */
+	public function __construct() {
+		$this->import_handler      = new Import_Handler();
+		$this->ajax_import_handler = new Ajax_Import_Handler();
+		$this->meta_box            = new Meta_Box();
+	}
 
 	/**
 	 * Register CSS and JS assets.
@@ -49,10 +74,10 @@ class Admin {
 	 */
 	public function set_up_hooks() {
 		add_action( 'admin_menu', array( $this, 'route_admin_load' ) );
-		add_action( 'add_meta_boxes', array( $this, 'add_meta_boxes' ) );
+		add_action( 'add_meta_boxes', array( $this->meta_box, 'register' ) );
 		add_action( 'admin_enqueue_scripts', array( $this, 'register_assets' ) );
-		add_action( 'wp_ajax_wppp_import_upload', array( $this, 'process_ajax_submit' ) );
-		add_action( 'wp_ajax_wppp_import_chunk', array( $this, 'process_ajax_chunk' ) );
+		add_action( 'wp_ajax_wppp_import_upload', array( $this->ajax_import_handler, 'process_ajax_submit' ) );
+		add_action( 'wp_ajax_wppp_import_chunk', array( $this->ajax_import_handler, 'process_ajax_chunk' ) );
 
 		// List table mods.
 		add_filter( 'manage_wppp_record_posts_columns', array( $this, 'add_column' ) );
@@ -94,7 +119,7 @@ class Admin {
 				$post = get_post( $post_id );
 				$date = wp_date( 'Y/m/d H:i:s', strtotime( $post->post_modified ) );
 				echo esc_html( $date );
-			break;
+				break;
 		}
 	}
 
@@ -107,16 +132,30 @@ class Admin {
 		if ( $this->is_import_page() && current_user_can( 'manage_options' ) && ! empty( $_FILES['wppp-xml'] ) ) {
 			check_admin_referer( 'wppp-import', 'wppp-import-nonce' );
 
-			$success = $this->process_import( $_FILES['wppp-xml'] );
+			$is_trial = isset( $_POST['wppp-trial-run'] ) && '1' === $_POST['wppp-trial-run'];
 
-			$redirect_to = add_query_arg(
-				array(
-					'post_type'   => 'wppp_record',
-					'page'        => 'wppp-import-records',
-					'results_key' => urlencode( $success ),
-				),
-				admin_url( 'edit.php' )
+			if ( $is_trial ) {
+				$result = $this->import_handler->process_trial_import( $_FILES['wppp-xml'] );
+			} else {
+				$result = $this->import_handler->process_import( $_FILES['wppp-xml'] );
+			}
+
+			$args = array(
+				'post_type' => 'wppp_record',
+				'page'      => 'wppp-import-records',
 			);
+
+			if ( is_wp_error( $result ) ) {
+				$args['import_error'] = urlencode( $result->get_error_message() );
+			} else {
+				if ( $is_trial ) {
+					$args['trial_key'] = urlencode( $result );
+				} else {
+					$args['results_key'] = urlencode( $result );
+				}
+			}
+
+			$redirect_to = add_query_arg( $args, admin_url( 'edit.php' ) );
 			wp_safe_redirect( $redirect_to );
 			die();
 		}
@@ -129,7 +168,7 @@ class Admin {
 	 *
 	 * @since 1.0.0
 	 */
-	public function register_admin_menu() {
+	protected function register_admin_menu() {
 		add_submenu_page(
 			'edit.php?post_type=wppp_record',
 			__( 'Import PastPerfect Records', 'wp-pastperfect' ),
@@ -151,17 +190,150 @@ class Admin {
 		wp_enqueue_style( 'wppp_admin' );
 
 		$results_key = isset( $_GET['results_key'] ) ? sanitize_text_field( wp_unslash( $_GET['results_key'] ) ) : null;
+		$trial_key = isset( $_GET['trial_key'] ) ? sanitize_text_field( wp_unslash( $_GET['trial_key'] ) ) : null;
+		$import_error = isset( $_GET['import_error'] ) ? sanitize_text_field( wp_unslash( $_GET['import_error'] ) ) : null;
 		$results     = null;
+		$trial_results = null;
 		if ( $results_key ) {
 			$results = get_option( 'wppp_import_results_' . $results_key );
 			// delete_option( 'bhs_import_results_' . $results_key );
+		}
+		if ( $trial_key ) {
+			$trial_results = get_option( 'wppp_trial_results_' . $trial_key );
 		}
 
 		?>
 		<div class="wrap">
 			<h1><?php esc_html_e( 'Import PastPerfect Records', 'wp-pastperfect' ); ?></h1>
 
-			<?php if ( $results ) : ?>
+			<?php if ( $import_error ) : ?>
+				<div class="notice notice-error is-dismissible">
+					<p><strong><?php esc_html_e( 'Import Error:', 'wp-pastperfect' ); ?></strong> <?php echo esc_html( $import_error ); ?></p>
+				</div>
+			<?php endif; ?>
+
+			<?php if ( $trial_results ) : ?>
+				<div class="notice notice-info">
+					<p><strong><?php esc_html_e( 'Trial Run - No Records Were Saved', 'wp-pastperfect' ); ?></strong></p>
+				</div>
+
+				<h2><?php esc_html_e( 'Trial Import Results', 'wp-pastperfect' ); ?></h2>
+
+				<div class="wppp-trial-summary">
+					<h3><?php esc_html_e( 'Summary', 'wp-pastperfect' ); ?></h3>
+					<table class="widefat">
+						<tbody>
+							<tr>
+								<th><?php esc_html_e( 'Total Records in XML:', 'wp-pastperfect' ); ?></th>
+								<td><strong><?php echo esc_html( $trial_results['total'] ); ?></strong></td>
+							</tr>
+							<tr>
+								<th><?php esc_html_e( 'Would Be Created:', 'wp-pastperfect' ); ?></th>
+								<td style="color: #46b450;"><strong><?php echo esc_html( count( $trial_results['would_create'] ) ); ?></strong></td>
+							</tr>
+							<tr>
+								<th><?php esc_html_e( 'Would Be Updated:', 'wp-pastperfect' ); ?></th>
+								<td style="color: #00a0d2;"><strong><?php echo esc_html( count( $trial_results['would_update'] ) ); ?></strong></td>
+							</tr>
+							<tr>
+								<th><?php esc_html_e( 'Would Fail:', 'wp-pastperfect' ); ?></th>
+								<td style="color: #dc3232;"><strong><?php echo esc_html( count( $trial_results['would_fail'] ) ); ?></strong></td>
+							</tr>
+						</tbody>
+					</table>
+				</div>
+
+				<?php if ( $trial_results['would_create'] ) : ?>
+					<h3><?php esc_html_e( 'Records That Would Be Created:', 'wp-pastperfect' ); ?></h3>
+					<pre class="wppp-import-results"><?php
+						foreach ( $trial_results['would_create'] as $id ) {
+							echo esc_html( $id ) . "\n";
+						}
+					?></pre>
+				<?php endif; ?>
+
+				<?php if ( $trial_results['would_update'] ) : ?>
+					<h3><?php esc_html_e( 'Records That Would Be Updated:', 'wp-pastperfect' ); ?></h3>
+					<pre class="wppp-import-results"><?php
+						foreach ( $trial_results['would_update'] as $id ) {
+							echo esc_html( $id ) . "\n";
+						}
+					?></pre>
+				<?php endif; ?>
+
+				<?php if ( $trial_results['would_fail'] ) : ?>
+					<h3><?php esc_html_e( 'Records That Would Fail:', 'wp-pastperfect' ); ?></h3>
+					<pre class="wppp-import-results"><?php
+						foreach ( $trial_results['would_fail'] as $failure ) {
+							printf(
+								'Record #%d - %s: %s' . "\n",
+								esc_html( $failure['record_num'] ),
+								esc_html( $failure['id'] ),
+								esc_html( $failure['reason'] )
+							);
+						}
+					?></pre>
+				<?php endif; ?>
+
+				<?php if ( ! empty( $trial_results['skipped'] ) ) : ?>
+					<h3><?php esc_html_e( 'Records Skipped (No Identifier):', 'wp-pastperfect' ); ?></h3>
+					<pre class="wppp-import-results"><?php
+						foreach ( $trial_results['skipped'] as $skipped ) {
+							printf(
+								'Record #%d - %d elements - %s' . "\n",
+								esc_html( $skipped['record_num'] ),
+								esc_html( $skipped['elements'] ),
+								esc_html( $skipped['reason'] )
+							);
+						}
+					?></pre>
+				<?php endif; ?>
+
+				<?php if ( ! empty( $trial_results['log'] ) ) : ?>
+					<h3><?php esc_html_e( 'Processing Log:', 'wp-pastperfect' ); ?></h3>
+					<pre class="wppp-import-log"><?php
+						foreach ( $trial_results['log'] as $log_entry ) {
+							echo esc_html( $log_entry ) . "\n";
+						}
+					?></pre>
+				<?php endif; ?>
+
+				<style type="text/css">
+					pre.wppp-import-results {
+						width: 400px;
+						height: 100px;
+						overflow: scroll;
+						background: #fff;
+						padding: 5px;
+						border: 1px solid #ddd;
+					}
+					pre.wppp-import-log {
+						width: 600px;
+						height: 150px;
+						overflow: scroll;
+						background: #f5f5f5;
+						padding: 10px;
+						border: 1px solid #ddd;
+						font-family: monospace;
+						font-size: 12px;
+					}
+					.wppp-trial-summary {
+						margin: 20px 0;
+					}
+					.wppp-trial-summary table {
+						max-width: 500px;
+					}
+					.wppp-trial-summary th {
+						width: 200px;
+					}
+				</style>
+
+				<p class="submit">
+					<a href="<?php echo esc_url( admin_url( 'edit.php?post_type=wppp_record&page=wppp-import-records' ) ); ?>" class="button button-primary"><?php esc_html_e( 'Import This File For Real', 'wp-pastperfect' ); ?></a>
+					<a href="<?php echo esc_url( admin_url( 'edit.php?post_type=wppp_record&page=wppp-import-records' ) ); ?>" class="button button-secondary"><?php esc_html_e( 'Upload a Different File', 'wp-pastperfect' ); ?></a>
+				</p>
+
+			<?php elseif ( $results ) : ?>
 				<h2>Results</h2>
 
 				<?php if ( $results['created'] ) : ?>
@@ -206,10 +378,19 @@ class Admin {
 			<?php else : ?>
 				<form action="" method="post" enctype="multipart/form-data">
 					<p><?php esc_html_e( 'Upload a PastPerfect-generated XML file to begin the import process.', 'wp-pastperfect' ); ?></p>
-					<input type="file" name="wppp-xml" id="wppp-xml" />
+					<p class="description">
+					</p>
+					<input type="file" name="wppp-xml" id="wppp-xml" accept=".xml" />
+
+					<p>
+						<label>
+							<input type="checkbox" name="wppp-trial-run" id="wppp-trial-run" value="1" />
+							<?php esc_html_e( 'Trial Run (preview import without saving records)', 'wp-pastperfect' ); ?>
+						</label>
+					</p>
 
 					<p class="submit">
-						<input type="submit" id="wppp-import-submit" class="button button-secondary" value="<?php esc_attr_e( 'Begin Import', 'wp-pastperfect' ); ?>" />
+						<input type="submit" id="wppp-import-submit" class="button button-primary" value="<?php esc_attr_e( 'Begin Import', 'wp-pastperfect' ); ?>" />
 					</p>
 
 					<div id="wppp-error" style="display: none;"></div>
@@ -226,6 +407,11 @@ class Admin {
 		<?php
 	}
 
+	/**
+	 * Check if the current page is the import page.
+	 *
+	 * @return bool
+	 */
 	protected function is_import_page() {
 		global $pagenow;
 
@@ -234,281 +420,5 @@ class Admin {
 			&& 'wppp_record' === sanitize_text_field( wp_unslash( $_GET['post_type'] ) )
 			&& isset( $_GET['page'] )
 			&& 'wppp-import-records' === sanitize_text_field( wp_unslash( $_GET['page'] ) );
-	}
-
-	protected function process_import( $file ) {
-		$time = time();
-
-		// Move the file to a permanent location.
-		$x = new \XMLReader();
-		$x->open( $file['tmp_name'] );
-
-		$doc = new \DOMDocument;
-
-		$results = array(
-			'created' => array(),
-			'updated' => array(),
-			'failed' => array(),
-		);
-
-		// Move to the first dc-record node.
-		while ( $x->read() && 'dc-record' !== $x->name );
-
-		$singular_elements = Record::get_singular_elements();
-
-		while ( 'dc-record' === $x->name ) {
-			$node = simplexml_import_dom( $doc->importNode( $x->expand(), true ) );
-			$atts = array();
-			$id = '';
-			foreach ( $node->children() as $a => $b ) {
-				if ( 'identifier' === $a && ! $id ) {
-					$id = (string) $b;
-				}
-
-				if ( in_array( $a, $singular_elements, true ) ) {
-					$atts[ $a ] = (string) $b;
-				} else {
-					$atts[ $a ][] = (string) $b;
-				}
-			}
-
-			$record = new Record();
-
-			$exists = (bool) $record->get_post_id_by_identifier( $id );
-
-			$record->set_up_from_raw_atts( $atts );
-
-			$saved = $record->save();
-
-			if ( $saved ) {
-				if ( $exists ) {
-					$results['updated'][] = $id;
-				} else {
-					$results['created'][] = $id;
-				}
-			} else {
-				$results['failed'][] = $id;
-			}
-
-			$x->next( 'dc-record' );
-		}
-
-		update_option( 'wppp_import_results_' . $time, $results );
-
-		return $time;
-	}
-
-	public function add_meta_boxes() {
-		add_meta_box(
-			'wppp-dc-metadata',
-			__( 'Dublin Core Metadata', 'wp-pastperfect' ),
-			array( $this, 'render_meta_box' ),
-			'wppp_record'
-		);
-	}
-
-	public function render_meta_box( $post ) {
-		echo '<table class="form-table">';
-		$record = new Record( $post->ID );
-		foreach ( Record::get_dc_elements() as $element ) {
-			$all_values = $record->get_dc_metadata( $element, false );
-			$values_formatted = array();
-			foreach ( (array) $all_values as $key => $value ) {
-				if ( is_array( $value ) ) {
-					$this_item = '<dl>';
-					$this_item .= sprintf(
-						'<dt>%s</dt><dd>%s</dd>',
-						esc_html( $key ),
-					implode( "\n", array_map( 'esc_html', $value ) )
-				);
-
-				$this_item .= '</dl>';
-
-				$values_formatted[] = '<p>' . $this_item . '</p>';
-				} else {
-					if ( 'relation_image' === $element ) {
-						$value = $record->convert_filename_to_asset_path( $value );
-						$value = sprintf(
-							'<img class="wppp-image-preview" src="%s" /><p>%s</p>',
-							esc_url( $value ),
-							esc_url( $value )
-						);
-					} else {
-						$value = esc_html( $value );
-					}
-
-					$values_formatted[] = wpautop( $value );
-				}
-			}
-
-			printf(
-				'<tr>
-				  <th scope="row">%s</th>
-				  <td>%s</td>
-				</tr>',
-				esc_html( $element ),
-				implode( "\n", $values_formatted )
-			);
-		}
-		echo '</table>';
-	}
-
-	public function process_ajax_submit() {
-		if ( ! current_user_can( 'edit_posts' ) ) {
-			die( '-1' );
-		}
-
-		$nonce = isset( $_POST['wppp-import-nonce'] ) ? wp_unslash( $_POST['wppp-import-nonce'] ) : '';
-
-		// @todo ?
-		if ( ! wp_verify_nonce( $nonce, 'wppp-import' ) ) {
-		//	die( '-1' );
-		}
-
-		if ( empty( $_FILES ) ) {
-			wp_send_json_error( __( 'File could not be uploaded. Check the "post_max_size" directive in php.ini.', 'wp-pastperfect' ) );
-		}
-
-		if ( empty( $_FILES['file-0']['tmp_name'] ) ) {
-			wp_send_json_error( __( 'File could not be uploaded. Check the "upload_max_filesize" directive in php.ini.', 'wp-pastperfect' ) );
-		}
-
-		// @todo filetypes?
-
-		$uploads = wp_upload_dir();
-		$timestamp = time();
-		$dest = $uploads['basedir'] . '/wppp-import-' . $timestamp . '.xml';
-
-		$moved = move_uploaded_file( $_FILES['file-0']['tmp_name'], $dest );
-		if ( ! $moved ) {
-			wp_send_json_error( __( 'File could not be uploaded.', 'wp-pastperfect' ) );
-		}
-
-		$x = new \XMLReader();
-		$x->open( $dest );
-		$doc = new \DOMDocument;
-
-		// Move to the first dc-record node.
-		while ( $x->read() && $this->record_element !== $x->name );
-
-		$count = 0;
-		while ( $this->record_element === $x->name ) {
-			$count++;
-			$x->next( $this->record_element );
-		}
-
-		$run_key = 'wppp_import_run_' . $timestamp;
-		$run_data = array(
-			'xml' => $dest,
-			'last' => 0,
-			'count' => $count,
-		);
-		update_option( $run_key, $run_data );
-
-		$retval = array(
-			'run' => $timestamp,
-			'pct' => 0,
-		);
-
-		wp_send_json_success( $retval );
-	}
-
-	public function process_ajax_chunk() {
-		if ( ! current_user_can( 'edit_posts' ) ) {
-			die( '-1' );
-		}
-
-		check_ajax_referer( 'wppp-import', 'nonce' );
-
-		$run = isset( $_POST['run'] ) ? sanitize_text_field( wp_unslash( $_POST['run'] ) ) : '';
-		$run_key = 'wppp_import_run_' . $run;
-		$run_data = get_option( $run_key );
-		if ( ! $run || ! $run_data ) {
-			wp_send_json_error( __( 'Could not find uploaded XML file. Please upload again.', 'wp-pastperfect' ) );
-		}
-
-		$last = $run_data['last'];
-
-		$x = new \XMLReader();
-		$x->open( $run_data['xml'] );
-
-		$doc = new \DOMDocument;
-
-		// Move to the first dc-record node.
-		while ( $x->read() && $this->record_element !== $x->name );
-
-		$results = array();
-		$current = 0;
-		$increment = 5;
-
-		while ( $this->record_element === $x->name ) {
-			if ( $current >= ( $last + $increment ) ) {
-				break;
-			}
-
-			$current++;
-
-			if ( $current <= $last ) {
-				$x->next( $this->record_element );
-				continue;
-			}
-
-			$node = simplexml_import_dom( $doc->importNode( $x->expand(), true ) );
-			$atts = array();
-			$id = '';
-			foreach ( $node->children() as $a => $b ) {
-				if ( 'identifier' === $a && ! $id ) {
-					$id = (string) $b;
-				}
-
-				$children = $b->children();
-				if ( $children ) {
-					$value = array();
-					foreach ( $children as $ck => $cv ) {
-						$atts[ $a ][ $ck ][] = (string) $cv;
-					}
-				} else {
-					$atts[ $a ][] = (string) $b;
-				}
-			}
-
-			$record = new Record();
-
-			$exists = (bool) $record->get_post_id_by_identifier( $id );
-
-			$record->set_up_from_raw_atts( $atts );
-
-			$saved = $record->save();
-
-			$result = array(
-				'identifer' => $id,
-				'status' => '',
-			);
-
-			if ( $saved ) {
-				if ( $exists ) {
-					$result['status'] = 'updated';
-				} else {
-					$result['status'] = 'created';
-				}
-			} else {
-				$result['status'] = 'failed';
-			}
-
-			$results[] = $result;
-
-			$x->next( $this->record_element );
-		}
-
-		$run_data['last'] = $current;
-		update_option( $run_key, $run_data );
-
-		$retval = array(
-			'run' => $run,
-			'pct' => floor( 100 * ( $current / $run_data['count'] ) ),
-			'results' => $results,
-		);
-
-		wp_send_json_success( $retval );
 	}
 }

@@ -19,3 +19,39 @@
 .wppp-import-record-failure {
 	color: #d11141;
 }
+
+pre.wppp-import-results {
+	width: 400px;
+	height: 100px;
+	overflow: scroll;
+	background: #fff;
+	padding: 5px;
+	border: 1px solid #ddd;
+}
+pre.wppp-import-log {
+	width: 600px;
+	height: 150px;
+	overflow: scroll;
+	background: #f5f5f5;
+	padding: 10px;
+	border: 1px solid #ddd;
+	font-family: monospace;
+	font-size: 12px;
+}
+.wppp-trial-summary {
+	margin: 20px 0;
+}
+.wppp-trial-summary table {
+	max-width: 500px;
+}
+.wppp-trial-summary th {
+	width: 200px;
+}
+
+pre.wppp-import-results {
+	width: 400px;
+	height: 100px;
+	overflow: scroll;
+	background: #fff;
+	padding: 5px;
+}
