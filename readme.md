@@ -1,53 +1,59 @@
-# WP PastPerfect
+# PastPerfect WP
 
-A WordPress plugin for managing and serving assets exported from PastPerfect Museum Software or other software that generates valid XML.
+A WordPress plugin for importing and serving archival metadata from PastPerfect exports and other valid XML sources.
 
-Built for the [Brooklyn Historical Society](http://brooklynhistory.org) by [Hard G](https://hardg.com) and then updated in 2026 for the Russian River Historical Society.
+Originally built for the Brooklyn Historical Society by Hard G and updated in 2026 for the Russian River Historical Society.
 
-Features:
+## Current status (2026)
 
-* Import assets from PastPerfect/valid XML formats
-* Dublin Core data for each asset is stored in a way that is friendly to other WordPress plugins that expect metadata:
-	title_collection,
-	title_title,
-	title_accession,
-	identifier,
-	type,
-	publisher,
-	description,
-	date,
-	coverage,
-	coverage_GIS,
-	creator,
-	contributor,
-	format,
-	format_scale,
-	format_size,
-	rights,
-	subject_people,
-	subject_subject,
-	subject_places,
-	relation_ohms,
-	relation_findingaid,
-	rights_request,
-	relation_image,
-	relation_attachment,
-	source,
-	language,
-	creator_alpha
-* Assets can be read from an external server via API endpoint
+The core plugin now supports production sync workflows for larger collections:
 
-Requirements:
+* Scheduled and manual sync via WP-Cron.
+* Pluggable source providers (XML remains supported and default).
+* Persistent media index table for scalable media lookups.
+* Media index refresh controls in admin and CLI support.
+* Import simulation tooling to preview outcomes before running full sync.
 
-* PHP 7.4.33
-* WordPress 6.5+
+For DBF-as-source workflows, use the companion add-on plugin in `wp-content/plugins/pastperfect-wp-dbf-source`.
 
-## Use
+## Requirements
 
-### Importing and updating records
+* PHP 8.0+
+* WordPress 6.8+
 
-Upload PastPerfect export documents at Dashboard > PastPerfect Records > Import. Records are individuated by the `identifier` field; those records whose `identifer` cannot be found in the WP database will have a new local record created, while those with an existing `identifier` will have their local records updated.
+## Core metadata behavior
 
-### Accessing records
+Records are keyed by `identifier` during import.
 
-Records are available at an API endpoint with the format `/wp-json/wppp/v2`. Be sure to flush your permalinks after activating the plugin, to ensure that the endpoint works (Dashboard > Settings > Permalinks > Save).
+* If `identifier` does not exist locally: create a new post.
+* If `identifier` already exists: update the existing post.
+
+Dublin Core-style fields are mapped into WordPress metadata in a plugin-friendly structure used by this codebase.
+
+## How to use
+
+### Import and sync
+
+1. Go to Dashboard > PastPerfect Records > Import.
+2. Provide a source XML URL or absolute file path.
+3. Choose recurrence settings for scheduled sync (optional).
+4. Run manually now or let WP-Cron execute on schedule.
+
+### Media indexing direction
+
+For larger collections, enable media import and keep the media index refreshed. This avoids repeated full directory scans during import and makes relation-to-media matching deterministic.
+
+If you are changing media files frequently, configure periodic index refresh in the plugin settings.
+
+### API access
+
+Records are exposed at `/wp-json/wppp/v2`.
+
+After first activation, flush permalinks at Dashboard > Settings > Permalinks > Save to ensure routes are registered.
+
+## Operational guidance
+
+* Start with import simulation before first large run.
+* Keep source data paths stable between simulation and real sync.
+* If using DBF source mode, install and configure the DBF add-on README instructions.
+* Review simulator output for duplicate identifiers and missing media references before production import.

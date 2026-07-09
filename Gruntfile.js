@@ -9,7 +9,7 @@ module.exports = function( grunt ) {
 
 		addtextdomain: {
 			options: {
-				textdomain: 'bhs-storehouse',
+				textdomain: 'pastperfect-wp',
 			},
 			target: {
 				files: {
@@ -30,8 +30,8 @@ module.exports = function( grunt ) {
 			target: {
 				options: {
 					domainPath: '/languages',
-					mainFile: 'bhs-storehouse.php',
-					potFilename: 'bhs-storehouse.pot',
+					mainFile: 'pastperfect-wp.php',
+					potFilename: 'pastperfect-wp.pot',
 					potHeaders: {
 						poedit: true,
 						'x-poedit-keywordslist': true

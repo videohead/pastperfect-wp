@@ -1,6 +1,6 @@
 <?php
 
-namespace BHS\Storehouse;
+namespace PastPerfect\Archive;
 
 /**
  * Record object.
@@ -8,36 +8,50 @@ namespace BHS\Storehouse;
  * @since 1.0.0
  */
 class Record {
+	/**
+	 * DCMI Dublin Core Metadata Element Set (Core 15).
+	 *
+	 * @see https://www.dublincore.org/specifications/dublin-core/dces/
+	 */
 	protected static $dc_elements = array(
-		'contributor', 'coverage', 'coverage_GIS',
-		'creator', 'creator_alpha',
-		'date', 'description',
-		'format', 'format_scale', 'format_size', 'identifier', 'identifier_callnumber',
-		'language', 'publisher',
-		'relation_findingaid', 'relation_ohms', 'relation_image', 'relation_attachment',
-		'rights', 'rights_request',
+		'contributor',
+		'coverage',
+		'creator',
+		'date',
+		'description',
+		'format',
+		'identifier',
+		'language',
+		'publisher',
+		'relation',
+		'rights',
 		'source',
-		'subject_genre', 'subject_people', 'subject_subject', 'subject_places',
-		'title_collection', 'title_title', 'title_accession',
+		'subject',
+		'title',
 		'type',
 	);
 
 	protected static $singular_elements = array(
-		'coverage_GIS', 'date', 'format', 'format_scale', 'format_size',
-		'identifier', 'identifier_callnumber', 'relation_ohms', 'rights', 'rights_request',
-		'title_collection', 'title_title', 'title_accession',
+		'identifier',
+		'title',
+		'date',
+		'description',
+		'format',
+		'language',
+		'publisher',
+		'rights',
+		'source',
+		'type',
+		'coverage',
 	);
 
 	protected static $taxonomy_elements = array(
-		'subject_genre'   => 'bhssh_subject_genre',
-		'subject_subject' => 'bhssh_subject_subject',
-		'subject_people'  => 'bhssh_subject_people',
-		'subject_places'  => 'bhssh_subject_places',
+		'subject' => 'ppwp_subject',
 	);
 
 	protected $dc_metadata = array();
 
-	protected $asset_base = 'https://s3.amazonaws.com/bhs.assets/';
+	protected $asset_base = 'https://s3.amazonaws.com/pastperfect.assets/';
 
 	protected $post;
 
@@ -50,7 +64,7 @@ class Record {
 	public function set_up_from_raw_atts( $atts ) {
 		$dc_elements = self::get_dc_elements();
 		foreach ( $atts as $att_type => $att ) {
-			if ( in_array( $att_type, $dc_elements ) ) {
+			if ( in_array( $att_type, $dc_elements, true ) ) {
 				$att = $this->sanitize_raw_attribute( $att_type, $att );
 
 				// Skip empty fields.
@@ -58,7 +72,7 @@ class Record {
 					continue;
 				}
 
-				$this->dc_metadata[ $att_type ] = $att;
+				$this->set_dc_metadata_value( $att_type, $att );
 			}
 		}
 
@@ -76,21 +90,9 @@ class Record {
 	 */
 	protected function sanitize_raw_attribute( $element, $values ) {
 		switch ( $element ) {
-			case 'relation_attachment' :
-				$clean = array();
-				foreach ( (array) $values as $value ) {
-					$extension = pathinfo( $value, PATHINFO_EXTENSION );
-					if ( 'jpg' === $extension || 'mp3' === $extension ) {
-						continue;
-					}
-					$clean[] = $value;
-				}
-				$values = array_filter( $clean );
-			break;
-
-			case 'subject_genre' :
+			case 'subject' :
 				$all_values = [];
-				foreach ( $values as $value ) {
+				foreach ( (array) $values as $value ) {
 					$_values    = explode( ';', $value );
 					$all_values = array_merge( $_values, $all_values );
 				}
@@ -100,7 +102,11 @@ class Record {
 			break;
 
 			default :
-				$values = array_filter( $values );
+				if ( is_array( $values ) ) {
+					$values = array_filter( $values );
+				} else {
+					$values = trim( (string) $values );
+				}
 			break;
 		}
 
@@ -114,7 +120,7 @@ class Record {
 		if ( is_array( $value ) ) {
 			return array_map( array( $this, 'convert_line_breaks' ), $value );
 		} else {
-			return str_replace( '/n', "\n", $value );
+			return str_replace( '/n', "\n", (string) $value );
 		}
 	}
 
@@ -153,20 +159,16 @@ class Record {
 		} else {
 			// Build post data for WP.
 			$post_data = array(
-				'post_type' => 'bhssh_record',
+				'post_type' => 'ppwp_record',
 				'post_status' => 'publish',
 			);
 		}
 
-		// post_title is a combination of identifier + title_title + title_collection.
+		// post_title is a combination of identifier + title.
 		$title_parts = array( $this->get_dc_metadata( 'identifier' ) );
 
-		if ( $title_title = $this->get_dc_metadata( 'title_title' ) ) {
-			$title_parts[] = $title_title;
-		}
-
-		if ( $title_collection = $this->get_dc_metadata( 'title_collection' ) ) {
-			$title_parts[] = $title_collection;
+		if ( $title = $this->get_dc_metadata( 'title' ) ) {
+			$title_parts[] = $title;
 		}
 
 		$post_data['post_title'] = implode( ' - ', $title_parts );
@@ -194,7 +196,7 @@ class Record {
 					continue;
 				}
 
-				$meta_key = 'bhs_dc_' . $dc_key;
+				$meta_key = 'pastperfect_dc_' . $dc_key;
 
 				// Delete existing keys, in case of update.
 				delete_post_meta( $post_id, $meta_key );
@@ -224,11 +226,11 @@ class Record {
 	public function get_post_id_by_identifier( $identifier ) {
 		$found = get_posts( array(
 			'posts_per_page' => 1,
-			'post_type' => 'bhssh_record',
+			'post_type' => 'ppwp_record',
 			'post_status' => 'any',
 			'meta_query' => array(
 				array(
-					'key' => 'bhs_dc_identifier',
+					'key' => 'pastperfect_dc_identifier',
 					'value' => $identifier,
 				),
 			),
@@ -253,7 +255,7 @@ class Record {
 	protected function populate( $post_id ) {
 		$post = get_post( $post_id );
 
-		if ( ! $post || 'bhssh_record' !== $post->post_type ) {
+		if ( ! $post || 'ppwp_record' !== $post->post_type ) {
 			return;
 		}
 
@@ -265,14 +267,7 @@ class Record {
 				$values = is_array( $terms ) ? wp_list_pluck( $terms, 'name' ) : '';
 			} else {
 				$get_single = in_array( $element, self::get_singular_elements(), true );
-				$values = get_post_meta( $post_id, 'bhs_dc_' . $element, $get_single );
-			}
-
-			// Some fields must be formatted before being presented.
-			switch ( $element ) {
-				case 'relation_attachment' :
-					$values = array_map( array( $this, 'convert_attachment_path_to_url' ), $values );
-				break;
+				$values = get_post_meta( $post_id, 'pastperfect_dc_' . $element, $get_single );
 			}
 
 			$this->dc_metadata[ $element ] = $values;
@@ -280,6 +275,10 @@ class Record {
 	}
 
 	public static function get_dc_elements() {
+		return self::$dc_elements;
+	}
+
+	public static function get_dc_core_elements() {
 		return self::$dc_elements;
 	}
 
@@ -317,8 +316,7 @@ class Record {
 	public function format_for_endpoint( $version ) {
 		$dc_metadata = array();
 
-		// @todo Should some of these be flattened?
-		foreach ( self::get_dc_elements() as $dc_element ) {
+		foreach ( self::get_dc_core_elements() as $dc_element ) {
 			$value = $this->get_dc_metadata( $dc_element, false );
 
 			$value = $this->format_field_for_endpoint( $dc_element, $value, $version );
@@ -330,6 +328,39 @@ class Record {
 	}
 
 	/**
+	 * Merge incoming metadata while respecting singular/multi element behavior.
+	 *
+	 * @param string $field Metadata field name.
+	 * @param mixed  $value Metadata value.
+	 */
+	protected function set_dc_metadata_value( $field, $value ) {
+		$is_singular = in_array( $field, self::get_singular_elements(), true );
+
+		if ( $is_singular ) {
+			if ( is_array( $value ) ) {
+				$value = reset( $value );
+			}
+
+			if ( '' !== (string) $value ) {
+				$this->dc_metadata[ $field ] = $value;
+			}
+
+			return;
+		}
+
+		$existing = array();
+		if ( isset( $this->dc_metadata[ $field ] ) ) {
+			$existing = (array) $this->dc_metadata[ $field ];
+		}
+
+		$incoming = is_array( $value ) ? $value : array( $value );
+		$merged = array_values( array_filter( array_merge( $existing, $incoming ) ) );
+		if ( ! empty( $merged ) ) {
+			$this->dc_metadata[ $field ] = $merged;
+		}
+	}
+
+	/**
 	 * Formats a specific field for use in an endpoint.
 	 *
 	 * @param string $element Element name (Dublin Core field name).
@@ -337,62 +368,8 @@ class Record {
 	 * @param int    $version API endpoint version.
 	 */
 	protected function format_field_for_endpoint( $element, $value, $version ) {
-		switch ( $element ) {
-			case 'relation_findingaid' :
-				switch ( $version ) {
-					case 1 :
-						$value = $this->convert_findingaid_to_html( $value );
-					break;
-
-					case 2 :
-						$value = reset( $value );
-					break;
-				}
-			break;
-
-			case 'relation_image' :
-				$value = array_map( array( $this, 'convert_filename_to_asset_path' ), $value );
-			break;
-
-			case 'coverage_GIS' :
-				$values = explode( ';', $value );
-				$value  = array_map( 'trim', $values );
-			break;
-		}
-
+		unset( $version, $element );
 		return $value;
-	}
-
-	protected function convert_findingaid_to_html( $value ) {
-		$values = array_filter( $value );
-		if ( empty( $values ) ) {
-			return '';
-		}
-
-		$title = $this->get_dc_metadata( 'title_collection', true );
-		if ( ! $title ) {
-			$title = $this->get_dc_metadata( 'title_title', true );
-		}
-
-		if ( ! $title ) {
-			return '';
-		}
-
-		return sprintf(
-			'<a href="%s" target="_blank">%s</a>',
-			esc_url_raw( reset( $values ) ),
-			esc_html( $title )
-		);
-	}
-
-	protected function convert_attachment_path_to_url( $value ) {
-		// basename() doesn't extract Windows paths on *nix.
-		preg_match( '|\\\?([^\\\]+)$|', $value, $matches );
-		$basename = '';
-		if ( $matches ) {
-			$basename = $matches[1];
-		}
-		return $this->asset_base . $basename;
 	}
 
 	public function convert_filename_to_asset_path( $value ) {

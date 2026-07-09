@@ -1,7 +1,7 @@
 <?php
 
 spl_autoload_register( function( $class ) {
-	$prefix = 'BHS\\Storehouse\\';
+	$prefix = 'PastPerfect\\Archive\\';
 	$base_dir = __DIR__ . '/classes/';
 
 	// Does the class use the namespace prefix?

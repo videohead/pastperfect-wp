@@ -10,7 +10,7 @@
 		$errorDiv.hide();
 		$successDiv.show();
 
-		$progressbar = $( '#bhs-import-progressbar' );
+		$progressbar = $( '#pastperfect-import-progressbar' );
 		$progressbar.progressbar({
 			value: data.pct
 		});
@@ -21,9 +21,10 @@
 
 	importChunk = function( run ) {
 		$.ajax( {
-			url: ajaxurl + '?action=bhssh_import_chunk',
+			url: ajaxurl + '?action=ppwp_import_chunk',
 			data: {
-				run: run
+				run: run,
+				'pastperfect-import-nonce': $( '#pastperfect-import-nonce' ).val()
 			},
 			type: 'POST',
 			success: function( response ) {
@@ -52,15 +53,15 @@
 			switch ( r.status ) {
 				// todo localization
 				case 'created' :
-					html += '<span class="bhs-import-record-status bhs-import-record-success">Success</span>: Created record ' + r.identifer;
+					html += '<span class="pastperfect-import-record-status pastperfect-import-record-success">Success</span>: Created record ' + r.identifier;
 				break;
 
 				case 'updated' :
-					html += '<span class="bhs-import-record-status bhs-import-record-success">Success</span>: Updated record ' + r.identifer;
+					html += '<span class="pastperfect-import-record-status pastperfect-import-record-success">Success</span>: Updated record ' + r.identifier;
 				break;
 
 				case 'failed' :
-					html += '<span class="bhs-import-record-status bhs-import-record-failure">Failure</span>: Could not create or update record ' + r.identifer;
+					html += '<span class="pastperfect-import-record-status pastperfect-import-record-failure">Failure</span>: Could not create or update record ' + r.identifier;
 				break;
 
 				default:
@@ -76,22 +77,22 @@
 	}
 
 	$(document).ready( function() {
-		$errorDiv = $( '#bhs-error' );
-		$successDiv = $( '#bhs-success' );
-		$successMessageDiv = $( '#bhs-import-message' );
+		$errorDiv = $( '#pastperfect-error' );
+		$successDiv = $( '#pastperfect-success' );
+		$successMessageDiv = $( '#pastperfect-import-message' );
 
-		$('#bhs-import-submit').click( function(e) {
+		$('#pastperfect-import-submit').click( function(e) {
 			e.preventDefault();
 
 			var data = new FormData();
-			$.each( $( '#bhs-xml' )[0].files, function( i, file ) {
+			$.each( $( '#pastperfect-xml' )[0].files, function( i, file ) {
 				data.append( 'file-' + i, file );
 			} );
 
-			data.append( 'bhs-import-nonce', $( '#bhs-import-nonce' ).val() );
+			data.append( 'pastperfect-import-nonce', $( '#pastperfect-import-nonce' ).val() );
 
 			$.ajax( {
-				url: ajaxurl + '?action=bhssh_import_upload',
+				url: ajaxurl + '?action=ppwp_import_upload',
 				data: data,
 				cache: false,
 				contentType: false,

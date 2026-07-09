@@ -1,3 +1,3 @@
 <?php
 
-\BHS\Storehouse\App::init();
+\PastPerfect\Archive\App::init();

@@ -1,8 +1,8 @@
 <?php
 
-namespace BHS\Storehouse\Endpoints\V1;
+namespace PastPerfect\Archive\Endpoints\V1;
 
-use BHS\Storehouse\Record;
+use PastPerfect\Archive\Record;
 
 /**
  * REST API endpoint.
@@ -10,15 +10,15 @@ use BHS\Storehouse\Record;
  * @since 1.0.0
  */
 class Endpoint {
-	protected $namespace = 'bhs';
-	protected $api_version = 'v1';
+	protected string $namespace = 'pastperfect';
+	protected string $api_version = 'v1';
 
 	/**
 	 * Hook into WordPress.
 	 *
 	 * @since 1.0.0
 	 */
-	public function set_up_hooks() {
+	public function set_up_hooks(): void {
 		add_action( 'rest_api_init', array( $this, 'register_rest_route' ) );
 	}
 
@@ -27,15 +27,44 @@ class Endpoint {
 	 *
 	 * @since 1.0.0
 	 */
-	public function register_rest_route() {
+	public function register_rest_route(): void {
 		register_rest_route(
 			"{$this->namespace}/{$this->api_version}",
 			'/record/(?P<identifier>[^/]+)',
 			array(
-				'methods' => 'GET',
+				'methods' => \WP_REST_Server::READABLE,
+				'permission_callback' => '__return_true',
 				'callback' => array( $this, 'get_record' ),
+				'args' => array(
+					'identifier' => array(
+						'description' => __( 'Unique PastPerfect identifier.', 'pastperfect-wp' ),
+						'type' => 'string',
+						'required' => true,
+						'sanitize_callback' => array( $this, 'sanitize_identifier' ),
+						'validate_callback' => array( $this, 'validate_identifier' ),
+					),
+				),
 			)
 		);
+	}
+
+	/**
+	 * Sanitize route argument.
+	 *
+	 * @param mixed $identifier Identifier parameter.
+	 */
+	public function sanitize_identifier( $identifier ): string {
+		return sanitize_text_field( rawurldecode( (string) $identifier ) );
+	}
+
+	/**
+	 * Validate route argument.
+	 *
+	 * @param mixed $identifier Identifier parameter.
+	 */
+	public function validate_identifier( $identifier ): bool {
+		$identifier = trim( (string) $identifier );
+		return '' !== $identifier;
 	}
 
 	/**
@@ -46,25 +75,21 @@ class Endpoint {
 	 * @param WP_REST_Request $request
 	 */
 	public function get_record( \WP_REST_Request $request ) {
-		$params = $request->get_params();
+		$identifier = $request->get_param( 'identifier' );
+		$identifier = $this->sanitize_identifier( $identifier );
 
-		if ( ! isset( $params['identifier'] ) ) {
-			return new \WP_Error( 'bhs_no_identifier', 'No identifier provided.', array( 'status' => 404 ) );
+		if ( ! $this->validate_identifier( $identifier ) ) {
+			return new \WP_Error( 'pastperfect_no_identifier', __( 'No identifier provided.', 'pastperfect-wp' ), array( 'status' => 400 ) );
 		}
 
 		$r = new Record();
-		$record_id = $r->get_post_id_by_identifier( $params['identifier'] );
+		$record_id = $r->get_post_id_by_identifier( $identifier );
 
 		if ( ! $record_id ) {
-			return new \WP_Error( 'bhs_no_identifier', 'No record found matching that identifier.', array( 'status' => 404 ) );
+			return new \WP_Error( 'pastperfect_no_identifier', __( 'No record found matching that identifier.', 'pastperfect-wp' ), array( 'status' => 404 ) );
 		}
 
 		$record = new Record( $record_id );
-
-		$retval = $record->format_for_endpoint( 1 );
-
-		$response = rest_ensure_response( $retval );
-		$response->set_status( 200 );
-		return $response;
+		return rest_ensure_response( $record->format_for_endpoint( 1 ) );
 	}
 }

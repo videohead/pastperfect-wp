@@ -1,9 +1,13 @@
 <?php
 
-namespace BHS\Storehouse;
+namespace PastPerfect\Archive;
 
 class App {
 	public static function init() {
+		SyncCoordinator::bootstrap();
+		ImportSimulator::bootstrap();
+		MediaIndex::bootstrap();
+
 		if ( is_admin() ) {
 			$admin = new Admin();
 			$admin->set_up_hooks();

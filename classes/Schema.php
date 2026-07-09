@@ -1,6 +1,6 @@
 <?php
 
-namespace BHS\Storehouse;
+namespace PastPerfect\Archive;
 
 /**
  * Schema.
@@ -21,12 +21,12 @@ class Schema {
 	/**
 	 * Register post types.
 	 *
-	 * - bhssh_record is a record.
+	 * - ppwp_record is a record.
 	 *
 	 * @since 1.0.0
 	 */
 	public function register_post_types() {
-		register_post_type( 'bhssh_record', array(
+		register_post_type( 'ppwp_record', array(
 			'label' => __( 'PastPerfect Records', 'webwork' ),
 			'labels' => array(
 				'name' => __( 'PastPerfect Records', 'webwork' ),
@@ -49,23 +49,12 @@ class Schema {
 	/**
 	 * Register taxonomies.
 	 *
-	 * - bhssh_subject_subject is <subject_subject>
-	 * - bhssh_subject_people is <subject_people>
-	 * - bhssh_subject_places is <subject_places>
+	 * - ppwp_subject is Dublin Core <subject>
 	 *
 	 * @since 1.0.0
 	 */
 	public function register_taxonomies() {
-		register_taxonomy( 'bhssh_subject_subject', 'bhssh_record', array(
-			'public' => false,
-		) );
-		register_taxonomy( 'bhssh_subject_people', 'bhssh_record', array(
-			'public' => false,
-		) );
-		register_taxonomy( 'bhssh_subject_places', 'bhssh_record', array(
-			'public' => false,
-		) );
-		register_taxonomy( 'bhssh_subject_genre', 'bhssh_record', array(
+		register_taxonomy( 'ppwp_subject', 'ppwp_record', array(
 			'public' => false,
 		) );
 	}
