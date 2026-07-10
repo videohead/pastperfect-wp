@@ -1326,10 +1326,9 @@ class Admin {
 		add_meta_box(
 			'pastperfect-dc-metadata',
 			__( 'Dublin Core Metadata', 'pastperfect-wp' ),
-			'pastperfect-dc-metadata',
-			__( 'Dublin Core Metadata', 'pastperfect-wp' ),
 			array( $this, 'render_meta_box' ),
-			'ppwp_record'
+			'ppwp_record',
+			'advanced'
 		);
 	}
 
