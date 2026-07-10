@@ -307,7 +307,9 @@ class ImportSimulator {
 				continue;
 			}
 
-			if ( in_array( $reader->name, array( 'record', 'dc-record' ), true ) ) {
+			$name = strtolower( (string) $reader->name );
+			$local_name = strtolower( (string) $reader->localName );
+			if ( in_array( $name, array( 'record', 'dc-record' ), true ) || in_array( $local_name, array( 'record', 'dc-record' ), true ) ) {
 				return $reader->name;
 			}
 		}
@@ -331,28 +333,57 @@ class ImportSimulator {
 	 */
 	private static function parse_node( \SimpleXMLElement $node ): array {
 		$atts = array();
-		$identifier = '';
 		$singular = Record::get_singular_elements();
 
 		foreach ( $node->children() as $field_name => $field_node ) {
 			$field_name = (string) $field_name;
 			$field_value = trim( (string) $field_node );
 
-			if ( 'identifier' === $field_name && '' === $identifier ) {
-				$identifier = $field_value;
-			}
-
 			if ( in_array( $field_name, $singular, true ) ) {
-				$atts[ $field_name ] = $field_value;
+				if ( '' === $field_value ) {
+					continue;
+				}
+
+				if ( ! isset( $atts[ $field_name ] ) || '' === trim( (string) $atts[ $field_name ] ) ) {
+					$atts[ $field_name ] = $field_value;
+					continue;
+				}
+
+				if ( 'title' === $field_name && self::is_generic_title_value( (string) $atts[ $field_name ] ) && ! self::is_generic_title_value( $field_value ) ) {
+					$atts[ $field_name ] = $field_value;
+				}
 			} else {
 				$atts[ $field_name ][] = $field_value;
 			}
 		}
 
+		$atts = Admin::map_xml_source_atts_to_dc( $atts );
+		$identifier = Admin::extract_identifier_from_mapped_atts( $atts );
+
 		return array(
 			'identifier' => $identifier,
 			'atts' => $atts,
 		);
+	}
+
+	private static function is_generic_title_value( string $value ): bool {
+		$value = strtolower( trim( $value ) );
+		$value = preg_replace( '/[^a-z0-9]+/', ' ', $value );
+		if ( ! is_string( $value ) ) {
+			return false;
+		}
+
+		$value = trim( $value );
+		$generic = array(
+			'postcard',
+			'post card',
+			'photograph',
+			'photo',
+			'image',
+			'picture',
+		);
+
+		return in_array( $value, $generic, true );
 	}
 
 	/**

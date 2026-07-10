@@ -8,10 +8,8 @@ class App {
 		ImportSimulator::bootstrap();
 		MediaIndex::bootstrap();
 
-		if ( is_admin() ) {
-			$admin = new Admin();
-			$admin->set_up_hooks();
-		}
+		$admin = new Admin();
+		$admin->set_up_hooks();
 
 		$schema = new Schema();
 		$schema->set_up_hooks();

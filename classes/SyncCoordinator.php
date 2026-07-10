@@ -9,11 +9,12 @@ class SyncCoordinator {
 	public const EVENT_RECURRING_START = 'pastperfect_sync_recurring_start';
 	public const EVENT_PROCESS_CHUNK = 'pastperfect_sync_process_chunk';
 	public const EVENT_MEDIA_INDEX_REFRESH = 'pastperfect_media_index_refresh';
+	public const EVENT_AUTO_TAG_RESCAN = 'pastperfect_auto_tag_rescan';
 	public const OPTION_SETTINGS = 'pastperfect_sync_settings';
 	public const OPTION_JOB_STATE = 'pastperfect_sync_job_state';
 	public const LOCK_KEY = 'pastperfect_sync_lock';
 	private const LOCK_TTL = 20 * MINUTE_IN_SECONDS;
-	private const DEFAULT_INCREMENT = 10;
+	private const DEFAULT_INCREMENT = 100;
 	private const MEDIA_PROVIDERS = array(
 		'wp_media_library',
 		'aws_s3',
@@ -25,8 +26,12 @@ class SyncCoordinator {
 		add_action( self::EVENT_RECURRING_START, array( __CLASS__, 'handle_recurring_start' ) );
 		add_action( self::EVENT_PROCESS_CHUNK, array( __CLASS__, 'process_job' ) );
 		add_action( self::EVENT_MEDIA_INDEX_REFRESH, array( __CLASS__, 'handle_media_index_refresh' ) );
+		add_action( self::EVENT_AUTO_TAG_RESCAN, array( __CLASS__, 'handle_auto_tag_rescan' ) );
 		add_action( 'update_option_' . self::OPTION_SETTINGS, array( __CLASS__, 'handle_settings_updated' ), 10, 2 );
+		add_action( 'init', array( __CLASS__, 'initialize_schedule' ), 20 );
+	}
 
+	public static function initialize_schedule(): void {
 		self::ensure_recurring_schedule();
 	}
 
@@ -38,6 +43,7 @@ class SyncCoordinator {
 		wp_clear_scheduled_hook( self::EVENT_RECURRING_START );
 		wp_clear_scheduled_hook( self::EVENT_PROCESS_CHUNK );
 		wp_clear_scheduled_hook( self::EVENT_MEDIA_INDEX_REFRESH );
+		wp_clear_scheduled_hook( self::EVENT_AUTO_TAG_RESCAN );
 		delete_transient( self::LOCK_KEY );
 	}
 
@@ -130,25 +136,43 @@ class SyncCoordinator {
 	/**
 	 * Start a sync job from cron or manual trigger.
 	 *
-	 * @param string $source Trigger source tag.
-	 * @param bool   $force  Force start even when another lock exists.
+	 * @param string     $source            Trigger source tag.
+	 * @param bool       $force             Force start even when another lock exists.
+	 * @param array|null $settings_override Optional normalized settings override.
 	 */
-	public static function start_job( string $source = 'manual', bool $force = false ) {
+	public static function start_job( string $source = 'manual', bool $force = false, ?array $settings_override = null ) {
 		if ( self::is_locked() && ! $force ) {
 			return new \WP_Error( 'pastperfect_sync_locked', __( 'A PastPerfect sync job is already running.', 'pastperfect-wp' ) );
 		}
 
-		$settings = self::get_settings();
+		$settings = is_array( $settings_override ) ? $settings_override : self::get_settings();
 		if ( empty( $settings['source'] ) ) {
 			return new \WP_Error( 'pastperfect_sync_missing_source', __( 'No source has been configured for scheduled sync.', 'pastperfect-wp' ) );
 		}
 
 		self::lock();
 
-		$provider_run = apply_filters( 'ppwp_create_import_run_from_source', null, $settings, $source );
+		$selected_provider = isset( $settings['source_provider'] ) ? sanitize_key( (string) $settings['source_provider'] ) : 'xml';
+		$provider_run = null;
+		if ( 'xml' !== $selected_provider ) {
+			$provider_run = apply_filters( 'ppwp_create_import_run_from_source', null, $settings, $source );
+		}
 		if ( is_wp_error( $provider_run ) ) {
 			self::unlock();
 			return $provider_run;
+		}
+
+		if ( ! is_array( $provider_run ) && 'xml' !== $selected_provider ) {
+			self::unlock();
+			return new \WP_Error(
+				'pastperfect_sync_provider_unhandled',
+				sprintf(
+					/* translators: 1: source provider key, 2: configured source value */
+					__( 'Selected source provider "%1$s" is not available in this request for source "%2$s". Ensure the provider plugin is active and loaded before running sync.', 'pastperfect-wp' ),
+					$selected_provider,
+					(string) $settings['source']
+				)
+			);
 		}
 
 		if ( is_array( $provider_run ) ) {
@@ -201,6 +225,67 @@ class SyncCoordinator {
 		MediaIndex::refresh_from_settings();
 	}
 
+	/**
+	 * Stop the currently running sync job.
+	 */
+	public static function stop_job( string $source = 'manual' ): bool {
+		$job_state = get_option( self::OPTION_JOB_STATE, array() );
+		$was_running = is_array( $job_state ) && ( $job_state['status'] ?? '' ) === 'running';
+
+		if ( ! is_array( $job_state ) ) {
+			$job_state = array();
+		}
+
+		$job_state['status'] = 'stopped';
+		$job_state['source'] = sanitize_key( $source );
+		$job_state['finished_at'] = current_time( 'mysql', true );
+		$job_state['last_error'] = '';
+
+		update_option( self::OPTION_JOB_STATE, $job_state, false );
+		wp_clear_scheduled_hook( self::EVENT_PROCESS_CHUNK );
+		self::unlock();
+
+		return $was_running;
+	}
+
+	public static function handle_auto_tag_rescan(): void {
+		$taxonomies = Admin::get_auto_tag_taxonomies();
+		if ( empty( $taxonomies ) ) {
+			return;
+		}
+
+		$page = 1;
+		do {
+			$post_ids = get_posts(
+				array(
+					'post_type' => 'ppwp_record',
+					'post_status' => 'any',
+					'posts_per_page' => 200,
+					'paged' => $page,
+					'fields' => 'ids',
+					'no_found_rows' => true,
+				)
+			);
+
+			if ( empty( $post_ids ) ) {
+				break;
+			}
+
+			foreach ( $post_ids as $post_id ) {
+				$post_id = (int) $post_id;
+				if ( $post_id <= 0 ) {
+					continue;
+				}
+
+				foreach ( $taxonomies as $taxonomy ) {
+					Admin::maybe_auto_tag_post_from_content( $post_id, (string) $taxonomy );
+				}
+			}
+
+			$page++;
+		} while ( count( $post_ids ) === 200 && $page <= 25 );
+	}
+
 	public static function process_job(): void {
 		$job_state = get_option( self::OPTION_JOB_STATE, array() );
 
@@ -226,6 +311,12 @@ class SyncCoordinator {
 				absint( $job_state['last'] ?? 0 ),
 				absint( $job_state['increment'] ?? self::DEFAULT_INCREMENT )
 			);
+
+			$latest_state = get_option( self::OPTION_JOB_STATE, array() );
+			if ( ! is_array( $latest_state ) || ( $latest_state['status'] ?? '' ) !== 'running' ) {
+				self::unlock();
+				return;
+			}
 
 			$job_state['last'] = absint( $result['current'] );
 			$job_state['counts'] = self::merge_counts( $job_state['counts'], $result['results'] );
@@ -270,6 +361,7 @@ class SyncCoordinator {
 				wp_clear_scheduled_hook( self::EVENT_RECURRING_START );
 			}
 			self::ensure_media_index_refresh_schedule( $settings );
+			self::ensure_auto_tag_rescan_schedule( $settings );
 			return;
 		}
 
@@ -283,6 +375,7 @@ class SyncCoordinator {
 			$current_schedule = wp_get_schedule( self::EVENT_RECURRING_START );
 			if ( $current_schedule === $recurrence ) {
 				self::ensure_media_index_refresh_schedule( $settings );
+				self::ensure_auto_tag_rescan_schedule( $settings );
 				return;
 			}
 			wp_clear_scheduled_hook( self::EVENT_RECURRING_START );
@@ -290,6 +383,35 @@ class SyncCoordinator {
 
 		wp_schedule_event( self::get_next_timestamp(), $recurrence, self::EVENT_RECURRING_START );
 		self::ensure_media_index_refresh_schedule( $settings );
+		self::ensure_auto_tag_rescan_schedule( $settings );
+	}
+
+	private static function ensure_auto_tag_rescan_schedule( array $settings ): void {
+		$next = wp_next_scheduled( self::EVENT_AUTO_TAG_RESCAN );
+		$taxonomies = Admin::get_auto_tag_taxonomies();
+
+		if ( empty( $taxonomies ) ) {
+			if ( $next ) {
+				wp_clear_scheduled_hook( self::EVENT_AUTO_TAG_RESCAN );
+			}
+			return;
+		}
+
+		$schedules = wp_get_schedules();
+		$recurrence = sanitize_key( (string) ( $settings['recurrence'] ?? 'daily' ) );
+		if ( ! isset( $schedules[ $recurrence ] ) ) {
+			$recurrence = 'daily';
+		}
+
+		if ( $next ) {
+			$current_schedule = wp_get_schedule( self::EVENT_AUTO_TAG_RESCAN );
+			if ( $current_schedule === $recurrence ) {
+				return;
+			}
+			wp_clear_scheduled_hook( self::EVENT_AUTO_TAG_RESCAN );
+		}
+
+		wp_schedule_event( self::get_next_timestamp(), $recurrence, self::EVENT_AUTO_TAG_RESCAN );
 	}
 
 	private static function ensure_media_index_refresh_schedule( array $settings ): void {

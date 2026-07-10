@@ -161,23 +161,30 @@ class Record {
 			$post_data = array(
 				'post_type' => 'ppwp_record',
 				'post_status' => 'publish',
+				'comment_status' => 'open',
 			);
 		}
 
-		// post_title is a combination of identifier + title.
+		// post_title is a combination of identifier + title by default.
 		$title_parts = array( $this->get_dc_metadata( 'identifier' ) );
 
 		if ( $title = $this->get_dc_metadata( 'title' ) ) {
 			$title_parts[] = $title;
 		}
 
-		$post_data['post_title'] = implode( ' - ', $title_parts );
+		$default_post_title = implode( ' - ', $title_parts );
+		$post_data['post_title'] = apply_filters( 'ppwp_record_post_title', $default_post_title, $this->dc_metadata, $this );
 
-		// post_content is 'description'.
-		$post_data['post_content'] = $this->get_dc_metadata( 'description' );
+		// post_content is description by default.
+		$default_post_content = (string) $this->get_dc_metadata( 'description' );
+		$post_data['post_content'] = apply_filters( 'ppwp_record_post_content', $default_post_content, $this->dc_metadata, $this );
 
-		// post_name is a URL-safe version of the identifier.
-		$post_data['post_name'] = sanitize_title( $this->get_dc_metadata( 'identifier' ) );
+		// Keep slug aligned with visible title by default.
+		$slug_source = trim( (string) ( $post_data['post_title'] ?? '' ) );
+		if ( '' === $slug_source ) {
+			$slug_source = (string) $this->get_dc_metadata( 'identifier' );
+		}
+		$post_data['post_name'] = sanitize_title( $slug_source );
 
 		if ( $is_new ) {
 			$post_id = wp_insert_post( $post_data );
@@ -186,8 +193,18 @@ class Record {
 		}
 
 		if ( $post_id ) {
-			foreach ( self::get_taxonomy_elements() as $element => $taxonomy ) {
-				wp_set_object_terms( $post_id, $this->get_dc_metadata( $element, false ), $taxonomy );
+			$taxonomy_elements = apply_filters( 'ppwp_record_taxonomy_elements', self::get_taxonomy_elements(), $this );
+			if ( ! is_array( $taxonomy_elements ) ) {
+				$taxonomy_elements = self::get_taxonomy_elements();
+			}
+
+			foreach ( $taxonomy_elements as $element => $taxonomy ) {
+				$terms = $this->get_dc_metadata( $element, false );
+				$terms = apply_filters( 'ppwp_record_taxonomy_terms', $terms, $element, $taxonomy, $this );
+				wp_set_object_terms( $post_id, $terms, $taxonomy );
+				if ( class_exists( __NAMESPACE__ . '\\Admin' ) ) {
+					Admin::maybe_auto_tag_post_from_content( (int) $post_id, (string) $taxonomy );
+				}
 			}
 
 			foreach ( $this->dc_metadata as $dc_key => $_ ) {

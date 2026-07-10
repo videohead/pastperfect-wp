@@ -16,7 +16,131 @@ class MediaIndex {
 	public static function bootstrap(): void {
 		if ( defined( 'WP_CLI' ) && true === constant( 'WP_CLI' ) && class_exists( '\\WP_CLI' ) ) {
 			\WP_CLI::add_command( 'ppwp media-index', array( __CLASS__, 'cli_media_index' ) );
+			\WP_CLI::add_command( 'ppwp media-import-all', array( __CLASS__, 'cli_media_import_all' ) );
+			\WP_CLI::add_command( 'ppwp draft-missing-media', array( __CLASS__, 'cli_draft_missing_media' ) );
+			\WP_CLI::add_command( 'ppwp script draft-missing-media', array( __CLASS__, 'cli_draft_missing_media' ) );
 		}
+	}
+
+	/**
+	 * Set posts without associated media to draft.
+	 *
+	 * ## OPTIONS
+	 *
+	 * [--post-type=<post-type>]
+	 * : Post type to process. Default: ppwp_record.
+	 *
+	 * [--statuses=<statuses>]
+	 * : Comma-separated statuses to scan. Default: publish,pending,future,private.
+	 *
+	 * [--dry-run=<bool>]
+	 * : Report what would change without updating posts. Default: false.
+	 *
+	 * [--format=<format>]
+	 * : table|json. Default: table.
+	 */
+	public static function cli_draft_missing_media( array $args, array $assoc_args ): void {
+		unset( $args );
+
+		$post_type = isset( $assoc_args['post-type'] ) ? sanitize_key( (string) $assoc_args['post-type'] ) : 'ppwp_record';
+		$statuses_raw = isset( $assoc_args['statuses'] ) ? (string) $assoc_args['statuses'] : 'publish,pending,future,private';
+		$statuses = array_values( array_filter( array_map( 'sanitize_key', array_map( 'trim', explode( ',', $statuses_raw ) ) ) ) );
+		$dry_run = isset( $assoc_args['dry-run'] ) ? filter_var( $assoc_args['dry-run'], FILTER_VALIDATE_BOOLEAN ) : false;
+		$format = isset( $assoc_args['format'] ) ? (string) $assoc_args['format'] : 'table';
+
+		if ( '' === $post_type ) {
+			\WP_CLI::error( 'Invalid post type.' );
+			return;
+		}
+
+		if ( empty( $statuses ) ) {
+			\WP_CLI::error( 'At least one status is required in --statuses.' );
+			return;
+		}
+
+		$post_ids = get_posts(
+			array(
+				'post_type' => $post_type,
+				'post_status' => $statuses,
+				'posts_per_page' => -1,
+				'fields' => 'ids',
+				'orderby' => 'ID',
+				'order' => 'ASC',
+			)
+		);
+
+		$scanned = is_array( $post_ids ) ? count( $post_ids ) : 0;
+		$updated = 0;
+		$unchanged = 0;
+
+		foreach ( $post_ids as $post_id ) {
+			$post_id = (int) $post_id;
+			if ( $post_id <= 0 ) {
+				continue;
+			}
+
+			if ( self::post_has_associated_media( $post_id ) ) {
+				$unchanged++;
+				continue;
+			}
+
+			if ( ! $dry_run ) {
+				wp_update_post(
+					array(
+						'ID' => $post_id,
+						'post_status' => 'draft',
+					)
+				);
+			}
+
+			$updated++;
+		}
+
+		$result = array(
+			array(
+				'post_type' => $post_type,
+				'statuses' => implode( ',', $statuses ),
+				'scanned' => $scanned,
+				'updated_to_draft' => $updated,
+				'unchanged_with_media' => $unchanged,
+				'dry_run' => $dry_run ? 'true' : 'false',
+			)
+		);
+
+		if ( 'json' === $format ) {
+			\WP_CLI::line( wp_json_encode( $result[0], JSON_PRETTY_PRINT ) );
+		} else {
+			\WP_CLI\Utils\format_items( 'table', $result, array_keys( $result[0] ) );
+		}
+
+		if ( $dry_run ) {
+			\WP_CLI::success( 'Dry run complete.' );
+			return;
+		}
+
+		\WP_CLI::success( 'Posts without associated media were moved to draft.' );
+	}
+
+	/**
+	 * Determine whether a post has associated media.
+	 */
+	private static function post_has_associated_media( int $post_id ): bool {
+		$thumbnail_id = (int) get_post_thumbnail_id( $post_id );
+		if ( $thumbnail_id > 0 ) {
+			return true;
+		}
+
+		$attachments = get_posts(
+			array(
+				'post_type' => 'attachment',
+				'post_parent' => $post_id,
+				'posts_per_page' => 1,
+				'fields' => 'ids',
+				'post_status' => 'inherit',
+			)
+		);
+
+		return ! empty( $attachments );
 	}
 
 	/**
@@ -116,6 +240,83 @@ class MediaIndex {
 
 		\WP_CLI\Utils\format_items( 'table', $summary, array_keys( $summary[0] ) );
 		\WP_CLI::success( 'Media index updated.' );
+	}
+
+	/**
+	 * Import all indexed media files into the Media Library.
+	 *
+	 * ## OPTIONS
+	 *
+	 * [--source=<path>]
+	 * : Absolute source directory. Defaults to configured sync media source directory.
+	 *
+	 * [--limit=<number>]
+	 * : Maximum number of files to process in this run. Default: 0 (no limit).
+	 *
+	 * [--dry-run=<bool>]
+	 * : Report what would be imported without writing attachments. Default: false.
+	 *
+	 * [--format=<format>]
+	 * : table|json. Default: table.
+	 */
+	public static function cli_media_import_all( array $args, array $assoc_args ): void {
+		unset( $args );
+
+		$settings = SyncCoordinator::get_settings();
+		$source = isset( $assoc_args['source'] ) ? (string) $assoc_args['source'] : (string) ( $settings['media_source_directory'] ?? '' );
+		$limit = isset( $assoc_args['limit'] ) ? max( 0, (int) $assoc_args['limit'] ) : 0;
+		$dry_run = isset( $assoc_args['dry-run'] ) ? filter_var( $assoc_args['dry-run'], FILTER_VALIDATE_BOOLEAN ) : false;
+
+		$result = self::import_all_indexed_media(
+			$source,
+			array(
+				'limit' => $limit,
+				'dry_run' => $dry_run,
+			)
+		);
+
+		if ( ! empty( $result['error'] ) ) {
+			\WP_CLI::error( (string) $result['error'] );
+			return;
+		}
+
+		$format = isset( $assoc_args['format'] ) ? (string) $assoc_args['format'] : 'table';
+		if ( 'json' === $format ) {
+			\WP_CLI::line( wp_json_encode( $result, JSON_PRETTY_PRINT ) );
+			return;
+		}
+
+		$summary = array(
+			array(
+				'source' => $result['source'],
+				'roots' => count( $result['roots'] ),
+				'total_indexed' => $result['total_indexed'],
+				'processed' => $result['processed'],
+				'already_imported' => $result['already_imported'],
+				'would_import' => $result['would_import'],
+				'imported' => $result['imported'],
+				'missing_on_disk' => $result['missing_on_disk'],
+				'failed' => $result['failed'],
+				'duration_seconds' => $result['duration_seconds'],
+			)
+		);
+
+		\WP_CLI\Utils\format_items( 'table', $summary, array_keys( $summary[0] ) );
+
+		if ( ! empty( $result['error_samples'] ) ) {
+			\WP_CLI::line( '' );
+			\WP_CLI::line( 'Error samples:' );
+			foreach ( $result['error_samples'] as $sample ) {
+				\WP_CLI::line( ' - ' . $sample );
+			}
+		}
+
+		if ( $dry_run ) {
+			\WP_CLI::success( 'Dry run complete.' );
+			return;
+		}
+
+		\WP_CLI::success( 'Bulk media import complete.' );
 	}
 
 	/**
@@ -263,6 +464,89 @@ class MediaIndex {
 			'skipped_unchanged' => $skipped_unchanged,
 			'pruned_missing' => $pruned_missing,
 			'index_total' => $index_total,
+			'duration_seconds' => round( microtime( true ) - $started, 3 ),
+		);
+	}
+
+	/**
+	 * Import indexed media rows for a source into the Media Library.
+	 *
+	 * @param array<string,mixed> $args Import options.
+	 * @return array<string,mixed>
+	 */
+	public static function import_all_indexed_media( string $source_directory, array $args = array() ): array {
+		$started = microtime( true );
+		self::create_table();
+
+		$source_directory = self::normalize_source_directory( $source_directory );
+		$roots = self::get_media_search_roots( $source_directory );
+		if ( empty( $roots ) ) {
+			return array( 'error' => 'Could not resolve a readable media source directory.' );
+		}
+
+		$limit = isset( $args['limit'] ) ? max( 0, (int) $args['limit'] ) : 0;
+		$dry_run = ! empty( $args['dry_run'] );
+
+		$total_indexed = self::count_indexed_files_for_source( $source_directory );
+		$rows = self::get_index_rows_for_roots( $roots, $limit );
+
+		$processed = 0;
+		$already_imported = 0;
+		$would_import = 0;
+		$imported = 0;
+		$missing_on_disk = 0;
+		$failed = 0;
+		$error_samples = array();
+
+		foreach ( $rows as $row ) {
+			$root = isset( $row['source_root'] ) ? (string) $row['source_root'] : '';
+			$relative = isset( $row['relative_path'] ) ? (string) $row['relative_path'] : '';
+			if ( '' === $root || '' === $relative ) {
+				continue;
+			}
+
+			$source_file = trailingslashit( wp_normalize_path( untrailingslashit( $root ) ) ) . ltrim( $relative, '/' );
+			$processed++;
+
+			if ( self::find_attachment_id_by_source_file( $source_file ) > 0 ) {
+				$already_imported++;
+				continue;
+			}
+
+			if ( ! is_readable( $source_file ) ) {
+				$missing_on_disk++;
+				continue;
+			}
+
+			if ( $dry_run ) {
+				$would_import++;
+				continue;
+			}
+
+			$attachment_id = self::import_source_file_to_media_library( $source_file, 0 );
+			if ( is_wp_error( $attachment_id ) ) {
+				$failed++;
+				if ( count( $error_samples ) < 10 ) {
+					$error_samples[] = $source_file . ' => ' . $attachment_id->get_error_message();
+				}
+				continue;
+			}
+
+			$imported++;
+		}
+
+		return array(
+			'source' => $source_directory,
+			'roots' => $roots,
+			'total_indexed' => $total_indexed,
+			'processed' => $processed,
+			'already_imported' => $already_imported,
+			'would_import' => $would_import,
+			'imported' => $imported,
+			'missing_on_disk' => $missing_on_disk,
+			'failed' => $failed,
+			'error_samples' => $error_samples,
+			'dry_run' => $dry_run,
 			'duration_seconds' => round( microtime( true ) - $started, 3 ),
 		);
 	}
@@ -556,6 +840,126 @@ class MediaIndex {
 		}
 
 		return $candidates;
+	}
+
+	/**
+	 * @return array<int,array<string,string>>
+	 */
+	private static function get_index_rows_for_roots( array $roots, int $limit = 0 ): array {
+		$roots = array_values( array_filter( array_map( 'strval', $roots ) ) );
+		if ( empty( $roots ) ) {
+			return array();
+		}
+
+		global $wpdb;
+		$table = self::get_table_name();
+
+		$root_clause = implode( ' OR ', array_fill( 0, count( $roots ), 'source_root = %s' ) );
+		$sql = "SELECT source_root, relative_path FROM {$table} WHERE ({$root_clause}) ORDER BY source_root ASC, relative_path ASC";
+		$values = $roots;
+
+		if ( $limit > 0 ) {
+			$sql .= ' LIMIT %d';
+			$values[] = $limit;
+		}
+
+		$prepared = $wpdb->prepare( $sql, $values );
+		if ( ! is_string( $prepared ) || '' === $prepared ) {
+			return array();
+		}
+
+		$rows = $wpdb->get_results( $prepared, ARRAY_A );
+		if ( ! is_array( $rows ) ) {
+			return array();
+		}
+
+		return $rows;
+	}
+
+	private static function find_attachment_id_by_source_file( string $source_file ): int {
+		$existing = get_posts(
+			array(
+				'post_type' => 'attachment',
+				'post_status' => 'inherit',
+				'fields' => 'ids',
+				'posts_per_page' => 1,
+				'meta_query' => array(
+					array(
+						'key' => '_ppwp_source_file',
+						'value' => $source_file,
+					),
+				),
+			)
+		);
+
+		if ( empty( $existing ) ) {
+			return 0;
+		}
+
+		return (int) reset( $existing );
+	}
+
+	/**
+	 * @return int|\WP_Error
+	 */
+	private static function import_source_file_to_media_library( string $source_file, int $post_id = 0 ) {
+		$existing_id = self::find_attachment_id_by_source_file( $source_file );
+		if ( $existing_id > 0 ) {
+			return $existing_id;
+		}
+
+		$contents = file_get_contents( $source_file );
+		if ( false === $contents ) {
+			return new \WP_Error( 'ppwp_media_read_failed', __( 'Could not read media file from source directory.', 'pastperfect-wp' ) );
+		}
+
+		add_filter( 'upload_dir', array( __CLASS__, 'filter_upload_dir_no_date_subdirs' ) );
+		$uploaded = wp_upload_bits( wp_basename( $source_file ), null, $contents );
+		remove_filter( 'upload_dir', array( __CLASS__, 'filter_upload_dir_no_date_subdirs' ) );
+
+		if ( ! empty( $uploaded['error'] ) ) {
+			return new \WP_Error( 'ppwp_media_upload_failed', (string) $uploaded['error'] );
+		}
+
+		$wp_filetype = wp_check_filetype( $uploaded['file'], null );
+		$attachment_id = wp_insert_attachment(
+			array(
+				'post_title' => preg_replace( '/\.[^.]+$/', '', wp_basename( $uploaded['file'] ) ),
+				'post_mime_type' => $wp_filetype['type'] ?? '',
+				'post_status' => 'inherit',
+				'post_parent' => $post_id,
+			),
+			$uploaded['file'],
+			$post_id
+		);
+
+		if ( is_wp_error( $attachment_id ) ) {
+			return $attachment_id;
+		}
+
+		if ( ! function_exists( 'wp_generate_attachment_metadata' ) ) {
+			require_once ABSPATH . 'wp-admin/includes/image.php';
+		}
+
+		$metadata = wp_generate_attachment_metadata( $attachment_id, $uploaded['file'] );
+		if ( is_array( $metadata ) ) {
+			wp_update_attachment_metadata( $attachment_id, $metadata );
+		}
+
+		update_post_meta( $attachment_id, '_ppwp_source_file', $source_file );
+
+		return $attachment_id;
+	}
+
+	/**
+	 * Force Media Library uploads into the base uploads folder (no date subdirs).
+	 */
+	public static function filter_upload_dir_no_date_subdirs( array $uploads ): array {
+		$uploads['subdir'] = '';
+		$uploads['path'] = $uploads['basedir'];
+		$uploads['url'] = $uploads['baseurl'];
+
+		return $uploads;
 	}
 
 	private static function create_table(): void {
