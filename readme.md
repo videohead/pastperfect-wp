@@ -1,18 +1,20 @@
 # PastPerfect WP
 
 A WordPress plugin for importing and serving archival metadata from PastPerfect exports and other valid XML sources.
+Additional plugin can build WordPress posts directly from you Past Perfect database files.
 
 Originally built for the Brooklyn Historical Society by Hard G and updated in 2026 for the Russian River Historical Society.
 
-## Current status (2026)
+## Current status
 
 The core plugin now supports production sync workflows for larger collections:
 
 * Scheduled and manual sync via WP-Cron.
-* Pluggable source providers (XML remains supported and default).
+* Pluggable source providers (XML remains supported and default), Past Perfect databases with additional plugin.
 * Persistent media index table for scalable media lookups.
 * Media index refresh controls in admin and CLI support.
 * Import simulation tooling to preview outcomes before running full sync.
+* full media import via WP CLI
 
 For DBF-as-source workflows, use the companion add-on plugin in `wp-content/plugins/pastperfect-wp-dbf-source`.
 
