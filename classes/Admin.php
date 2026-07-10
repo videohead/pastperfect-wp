@@ -1,7 +1,6 @@
 <?php
 
 namespace PastPerfect\Archive;
-namespace PastPerfect\Archive;
 
 /**
  * Entrance class for admin functionality.
@@ -32,7 +31,6 @@ class Admin {
 	public function set_up_hooks(): void {
 		add_action( 'admin_menu', array( $this, 'register_admin_menu' ) );
 		add_action( 'admin_init', array( $this, 'handle_admin_actions' ) );
-	public function set_up_hooks(): void {
 		add_action( 'admin_menu', array( $this, 'register_admin_menu' ) );
 		add_action( 'admin_init', array( $this, 'handle_admin_actions' ) );
 		add_action( 'add_meta_boxes', array( $this, 'add_meta_boxes' ) );
@@ -55,8 +53,6 @@ class Admin {
 	 */
 	public function add_column( array $columns ): array {
 		$columns['updated'] = __( 'Last Updated', 'pastperfect-wp' );
-	public function add_column( array $columns ): array {
-		$columns['updated'] = __( 'Last Updated', 'pastperfect-wp' );
 		return $columns;
 	}
 
@@ -65,7 +61,6 @@ class Admin {
 	 *
 	 * @param array $columns Array of sortable columns.
 	 */
-	public function add_sortable_column( array $columns ): array {
 	public function add_sortable_column( array $columns ): array {
 		$columns['updated'] = 'modified';
 		return $columns;
@@ -350,6 +345,117 @@ class Admin {
 	}
 
 	/**
+	 * Print sync notice markup.
+	 */
+	private function print_sync_notice( string $notice, string $notice_text ): void {
+		if ( ! $notice ) {
+			return;
+		}
+
+		$notice_class = 'notice-info';
+		$message = '';
+
+		if ( 'sync-saved' === $notice ) {
+			$message = __( 'Scheduled sync settings were saved.', 'pastperfect-wp' );
+		} elseif ( 'sync-started' === $notice ) {
+			$message = __( 'Manual sync started. WP-Cron will continue processing in the background.', 'pastperfect-wp' );
+		} elseif ( 'sync-stopped' === $notice ) {
+			$message = __( 'Running sync was stopped. Pending chunk jobs were cleared.', 'pastperfect-wp' );
+		} elseif ( 'sync-error' === $notice ) {
+			$notice_class = 'notice-error';
+			$message = $notice_text ?: __( 'Could not start sync job.', 'pastperfect-wp' );
+		}
+
+		if ( $message ) {
+			printf(
+				'<div class="notice %s is-dismissible"><p>%s</p></div>',
+				esc_attr( $notice_class ),
+				esc_html( $message )
+			);
+		}
+	}
+
+	/**
+	 * Print setup page notice.
+	 */
+	private function print_setup_notice( string $notice ): void {
+		if ( 'saved' === $notice ) {
+			printf(
+				'<div class="notice notice-success is-dismissible"><p>%s</p></div>',
+				esc_html__( 'Setup settings saved. Permalinks were refreshed.', 'pastperfect-wp' )
+			);
+		}
+	}
+
+	/**
+	 * Print XML mapping page notice.
+	 */
+	private function print_xml_mapping_notice( string $notice ): void {
+		if ( 'saved' === $notice ) {
+			printf(
+				'<div class="notice notice-success is-dismissible"><p>%s</p></div>',
+				esc_html__( 'XML mapping saved.', 'pastperfect-wp' )
+			);
+		} elseif ( 'reset' === $notice ) {
+			printf(
+				'<div class="notice notice-success is-dismissible"><p>%s</p></div>',
+				esc_html__( 'XML mapping reset to defaults.', 'pastperfect-wp' )
+			);
+		}
+	}
+
+	/**
+	 * Print import results (created, updated, failed records).
+	 */
+	private function print_import_results( array $results ): void {
+		echo '<h2>' . esc_html__( 'Results', 'pastperfect-wp' ) . '</h2>';
+
+		if ( ! empty( $results['created'] ) ) {
+			$this->print_result_section( 'created', $results['created'] );
+		}
+
+		if ( ! empty( $results['updated'] ) ) {
+			$this->print_result_section( 'updated', $results['updated'] );
+		}
+
+		if ( ! empty( $results['failed'] ) ) {
+			$this->print_result_section( 'failed', $results['failed'] );
+		}
+
+		printf(
+			'<a href="%s">%s</a>',
+			esc_url( admin_url( 'edit.php?post_type=ppwp_record&page=pastperfect-import-records' ) ),
+			esc_html__( '<<< Import another set of records', 'pastperfect-wp' )
+		);
+	}
+
+	/**
+	 * Print a single result section (created/updated/failed).
+	 */
+	private function print_result_section( string $type, array $items ): void {
+		switch ( $type ) {
+			case 'created':
+				$label = __( 'The following records were created:', 'pastperfect-wp' );
+				break;
+			case 'updated':
+				$label = __( 'The following records were updated:', 'pastperfect-wp' );
+				break;
+			case 'failed':
+				$label = __( 'The following records could not be processed:', 'pastperfect-wp' );
+				break;
+			default:
+				return;
+		}
+
+		echo '<p>' . esc_html( $label ) . '</p>';
+		echo '<pre class="pastperfect-import-results">';
+		foreach ( $items as $item ) {
+			echo esc_html( $item ) . "\n";
+		}
+		echo '</pre>';
+	}
+
+	/**
 	 * Handle postbacks on the import/sync admin screen.
 	 */
 	public function handle_admin_actions(): void {
@@ -430,7 +536,6 @@ class Admin {
 	 * Register admin menus.
 	 */
 	public function register_admin_menu(): void {
-	public function register_admin_menu(): void {
 		add_submenu_page(
 			'edit.php?post_type=ppwp_record',
 			__( 'PastPerfect Setup', 'pastperfect-wp' ),
@@ -493,25 +598,7 @@ class Admin {
 		<div class="wrap">
 			<h1><?php esc_html_e( 'Import PastPerfect Records', 'pastperfect-wp' ); ?></h1>
 
-			<?php if ( $notice ) : ?>
-				<?php
-				$notice_class = 'notice-info';
-				$message = '';
-				if ( 'sync-saved' === $notice ) {
-					$message = __( 'Scheduled sync settings were saved.', 'pastperfect-wp' );
-				} elseif ( 'sync-started' === $notice ) {
-					$message = __( 'Manual sync started. WP-Cron will continue processing in the background.', 'pastperfect-wp' );
-				} elseif ( 'sync-stopped' === $notice ) {
-					$message = __( 'Running sync was stopped. Pending chunk jobs were cleared.', 'pastperfect-wp' );
-				} elseif ( 'sync-error' === $notice ) {
-					$notice_class = 'notice-error';
-					$message = $notice_text ? $notice_text : __( 'Could not start sync job.', 'pastperfect-wp' );
-				}
-				?>
-				<?php if ( $message ) : ?>
-					<div class="notice <?php echo esc_attr( $notice_class ); ?> is-dismissible"><p><?php echo esc_html( $message ); ?></p></div>
-				<?php endif; ?>
-			<?php endif; ?>
+			<?php $this->print_sync_notice( $notice, $notice_text ); ?>
 
 			<?php if ( '' !== $media_source_warning ) : ?>
 				<div class="notice notice-warning inline"><p><?php echo esc_html( $media_source_warning ); ?></p></div>
@@ -699,20 +786,7 @@ class Admin {
 			<?php if ( $results ) : ?>
 				<h2><?php esc_html_e( 'Results', 'pastperfect-wp' ); ?></h2>
 
-				<?php if ( ! empty( $results['created'] ) ) : ?>
-					<p><?php esc_html_e( 'The following records were created:', 'pastperfect-wp' ); ?></p>
-					<pre class="pastperfect-import-results"><?php foreach ( $results['created'] as $created ) { echo esc_html( $created ) . "\n"; } ?></pre>
-				<?php endif; ?>
-
-				<?php if ( ! empty( $results['updated'] ) ) : ?>
-					<p><?php esc_html_e( 'The following records were updated:', 'pastperfect-wp' ); ?></p>
-					<pre class="pastperfect-import-results"><?php foreach ( $results['updated'] as $updated ) { echo esc_html( $updated ) . "\n"; } ?></pre>
-				<?php endif; ?>
-
-				<?php if ( ! empty( $results['failed'] ) ) : ?>
-					<p><?php esc_html_e( 'The following records could not be processed:', 'pastperfect-wp' ); ?></p>
-					<pre class="pastperfect-import-results"><?php foreach ( $results['failed'] as $failed ) { echo esc_html( $failed ) . "\n"; } ?></pre>
-				<?php endif; ?>
+				<?php $this->print_import_results( $results ); ?>
 
 				<a href="<?php echo esc_url( admin_url( 'edit.php?post_type=ppwp_record&page=pastperfect-import-records' ) ); ?>"><?php esc_html_e( '<<< Import another set of records', 'pastperfect-wp' ); ?></a>
 			<?php else : ?>
@@ -784,9 +858,7 @@ class Admin {
 			<h1><?php esc_html_e( 'PastPerfect Setup', 'pastperfect-wp' ); ?></h1>
 			<p><?php esc_html_e( 'Control post type labels and permalink bases used by PastPerfect records.', 'pastperfect-wp' ); ?></p>
 
-			<?php if ( 'saved' === $notice ) : ?>
-				<div class="notice notice-success is-dismissible"><p><?php esc_html_e( 'Setup settings saved. Permalinks were refreshed.', 'pastperfect-wp' ); ?></p></div>
-			<?php endif; ?>
+			<?php $this->print_setup_notice( $notice ); ?>
 
 			<form action="" method="post">
 				<?php wp_nonce_field( 'ppwp-setup-save', 'ppwp-setup-save-nonce', false ); ?>
@@ -951,11 +1023,7 @@ class Admin {
 			<p><?php esc_html_e( 'Map incoming XML field names to Dublin Core fields used by the importer. Use this when source XML names do not match expected Dublin Core element names.', 'pastperfect-wp' ); ?></p>
 			<p><a href="<?php echo esc_url( $import_url ); ?>"><?php esc_html_e( 'Return to Import screen', 'pastperfect-wp' ); ?></a></p>
 
-			<?php if ( 'saved' === $notice ) : ?>
-				<div class="notice notice-success is-dismissible"><p><?php esc_html_e( 'XML mapping saved.', 'pastperfect-wp' ); ?></p></div>
-			<?php elseif ( 'reset' === $notice ) : ?>
-				<div class="notice notice-success is-dismissible"><p><?php esc_html_e( 'XML mapping reset to defaults.', 'pastperfect-wp' ); ?></p></div>
-			<?php endif; ?>
+			<?php $this->print_xml_mapping_notice( $notice ); ?>
 
 			<?php if ( '' !== $profile_error ) : ?>
 				<div class="notice notice-warning"><p><?php echo esc_html( $profile_error ); ?></p></div>
@@ -1248,7 +1316,6 @@ class Admin {
 	}
 
 	public function add_meta_boxes(): void {
-	public function add_meta_boxes(): void {
 		add_meta_box(
 			'pastperfect-dc-metadata',
 			__( 'Dublin Core Metadata', 'pastperfect-wp' ),
@@ -1256,50 +1323,76 @@ class Admin {
 			__( 'Dublin Core Metadata', 'pastperfect-wp' ),
 			array( $this, 'render_meta_box' ),
 			'ppwp_record'
-			'ppwp_record'
 		);
 	}
 
 	/**
 	 * @param \WP_Post $post Post object.
 	 */
-	public function render_meta_box( $post ): void {
 	/**
+	 * Render Dublin Core metadata meta box.
+	 *
 	 * @param \WP_Post $post Post object.
 	 */
 	public function render_meta_box( $post ): void {
-		echo '<table class="form-table">';
-		$record = new Record( $post->ID );
-		foreach ( Record::get_dc_elements() as $element ) {
-			$all_values = $record->get_dc_metadata( $element, false );
-			$values_formatted = array();
-			foreach ( (array) $all_values as $key => $value ) {
-				if ( is_array( $value ) ) {
-					$this_item = '<dl>';
-					$this_item .= sprintf(
-						'<dt>%s</dt><dd>%s</dd>',
-						esc_html( (string) $key ),
-						implode( "\n", array_map( 'esc_html', $value ) )
-						esc_html( (string) $key ),
-						implode( "\n", array_map( 'esc_html', $value ) )
-					);
-					$this_item .= '</dl>';
-					$values_formatted[] = '<p>' . $this_item . '</p>';
-				} else {
-					$value = esc_html( (string) $value );
-					$value = esc_html( (string) $value );
-					$values_formatted[] = wpautop( $value );
-				}
-			}
+		$this->print_dc_metadata_table( $post->ID );
+	}
 
-			printf(
-				'<tr><th scope="row">%s</th><td>%s</td></tr>',
-				'<tr><th scope="row">%s</th><td>%s</td></tr>',
-				esc_html( $element ),
-				implode( "\n", $values_formatted )
-			);
+	/**
+	 * Print Dublin Core metadata in a table format.
+	 */
+	private function print_dc_metadata_table( int $post_id ): void {
+		echo '<table class="form-table">';
+		$record = new Record( $post_id );
+		foreach ( Record::get_dc_elements() as $element ) {
+			$this->print_dc_element_row( $record, $element );
 		}
 		echo '</table>';
+	}
+
+	/**
+	 * Print a single Dublin Core element row.
+	 */
+	private function print_dc_element_row( Record $record, string $element ): void {
+		$all_values = $record->get_dc_metadata( $element, false );
+		$values_formatted = $this->format_dc_values( $all_values );
+		$values_html = implode( "\n", $values_formatted );
+		printf(
+			'<tr><th scope="row">%s</th><td>%s</td></tr>',
+			esc_html( $element ),
+			$values_html  // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Already escaped in format_dc_values
+		);
+	}
+
+	/**
+	 * Format Dublin Core values for display.
+	 *
+	 * @param mixed $all_values Values to format.
+	 * @return array<int,string>
+	 */
+	private function format_dc_values( $all_values ): array {
+		$values_formatted = array();
+		foreach ( (array) $all_values as $key => $value ) {
+			if ( is_array( $value ) ) {
+				$values_formatted[] = $this->format_dc_array_value( $key, $value );
+			} else {
+				$values_formatted[] = wpautop( esc_html( (string) $value ) );
+			}
+		}
+		return $values_formatted;
+	}
+
+	/**
+	 * Format a Dublin Core array value as a definition list.
+	 */
+	private function format_dc_array_value( $key, array $value ): string {
+		$escaped_key = esc_html( (string) $key );
+		$escaped_values = implode( "\n", array_map( 'esc_html', $value ) );
+		return sprintf(
+			'<p><dl><dt>%s</dt><dd>%s</dd></dl></p>',
+			$escaped_key,
+			$escaped_values
+		);
 	}
 
 	/**
@@ -1338,10 +1431,8 @@ class Admin {
 
 		$count = 0;
 		while ( $record_element === $reader->name ) {
-		while ( $record_element === $reader->name ) {
 			$count++;
 			$reader->next( $record_element );
-			$reader->next( $record_element );
 		}
 
 		$reader->close();
@@ -1354,12 +1445,6 @@ class Admin {
 		$run_key = self::get_run_key( $run );
 		$reader->close();
 
-		if ( 0 === $count ) {
-			return new \WP_Error( 'pastperfect_no_records', __( 'No records were found in the XML source.', 'pastperfect-wp' ) );
-		}
-
-		$run = (string) ( time() . wp_rand( 100, 999 ) );
-		$run_key = self::get_run_key( $run );
 		$run_data = array(
 			'run' => $run,
 			'xml' => $parser_xml_path,
@@ -1367,10 +1452,7 @@ class Admin {
 			'count' => $count,
 			'record_element' => $record_element,
 			'import_settings' => self::normalize_import_settings( $settings ),
-			'record_element' => $record_element,
-			'import_settings' => self::normalize_import_settings( $settings ),
 		);
-		update_option( $run_key, $run_data, false );
 		update_option( $run_key, $run_data, false );
 
 		return array(
@@ -1473,11 +1555,7 @@ class Admin {
 		}
 
 		$doc = new \DOMDocument();
-		$doc = new \DOMDocument();
 
-		while ( $reader->read() && $record_element !== $reader->name ) {
-			// No-op, advance reader.
-		}
 		while ( $reader->read() && $record_element !== $reader->name ) {
 			// No-op, advance reader.
 		}
@@ -1485,7 +1563,6 @@ class Admin {
 		$results = array();
 		$current = 0;
 
-		while ( $record_element === $reader->name ) {
 		while ( $record_element === $reader->name ) {
 			if ( $current >= ( $last + $increment ) ) {
 				break;
