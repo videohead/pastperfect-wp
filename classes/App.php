@@ -6,6 +6,7 @@ class App {
 	public static function init() {
 		SyncCoordinator::bootstrap();
 		ImportSimulator::bootstrap();
+		ImportCLI::bootstrap();
 		MediaIndex::bootstrap();
 
 		$admin = new Admin();

@@ -55,10 +55,80 @@ class Record {
 
 	protected $post;
 
+	protected $initial_post_status = 'publish';
+
 	public function __construct( $post_id = null ) {
 		if ( $post_id ) {
 			$this->populate( $post_id );
 		}
+	}
+
+	/**
+	 * Set the initial post status for new records.
+	 *
+	 * @param string $status The post status (e.g., 'publish', 'draft').
+	 */
+	public function set_initial_post_status( string $status ): void {
+		$this->initial_post_status = $status;
+	}
+
+	/**
+	 * Check if this record has any media references.
+	 *
+	 * Returns true if relation metadata contains probable media references.
+	 *
+	 * @return bool
+	 */
+	public function has_media_references(): bool {
+		$relation_values = $this->get_dc_metadata( 'relation', false );
+		if ( empty( $relation_values ) ) {
+			return false;
+		}
+
+		$relation_values = is_array( $relation_values ) ? $relation_values : array( $relation_values );
+		foreach ( $relation_values as $value ) {
+			$value = trim( (string) $value );
+			if ( '' === $value ) {
+				continue;
+			}
+
+			$parts = strpos( $value, ';' ) !== false ? array_map( 'trim', explode( ';', $value ) ) : array( $value );
+			foreach ( $parts as $part ) {
+				if ( $this->is_probable_media_reference( $part ) ) {
+					return true;
+				}
+			}
+		}
+
+		return false;
+	}
+
+	/**
+	 * Determine if a string is a probable media reference.
+	 *
+	 * @param string $reference The reference to check.
+	 * @return bool
+	 */
+	private function is_probable_media_reference( string $reference ): bool {
+		$reference = trim( $reference );
+		if ( '' === $reference ) {
+			return false;
+		}
+
+		$path = wp_parse_url( $reference, PHP_URL_PATH );
+		if ( ! is_string( $path ) || '' === $path ) {
+			$path = $reference;
+		}
+
+		$ext = strtolower( (string) pathinfo( $path, PATHINFO_EXTENSION ) );
+		$media_exts = array(
+			'jpg', 'jpeg', 'png', 'gif', 'webp', 'tif', 'tiff', 'bmp', 'svg',
+			'mp3', 'wav', 'flac', 'aac', 'm4a', 'ogg',
+			'mp4', 'mov', 'm4v', 'avi', 'mkv', 'webm',
+			'pdf', 'doc', 'docx', 'ppt', 'pptx', 'xls', 'xlsx', 'txt',
+		);
+
+		return in_array( $ext, $media_exts, true );
 	}
 
 	public function set_up_from_raw_atts( $atts ) {
@@ -142,6 +212,121 @@ class Record {
 		$this->dc_metadata[ $field ] = $value;
 	}
 
+	/**
+	 * Determine WordPress post date based on Dublin Core date or identifier.
+	 *
+	 * Tries to parse the date field first. If not available, extracts year from identifier.
+	 * Defaults to January 1 when only year is available.
+	 *
+	 * @return string|false Unix timestamp or false if no date can be determined.
+	 */
+	protected function get_post_date_from_metadata() {
+		$date_str = $this->get_dc_metadata( 'date' );
+		if ( $date_str ) {
+			$timestamp = $this->parse_date_value( (string) $date_str );
+			if ( $timestamp ) {
+				return $timestamp;
+			}
+		}
+
+		$identifier = $this->get_dc_metadata( 'identifier' );
+		if ( $identifier ) {
+			$year = $this->extract_year_from_identifier( (string) $identifier );
+			if ( $year ) {
+				return strtotime( 'January 1, ' . $year );
+			}
+		}
+
+		return false;
+	}
+
+	/**
+	 * Parse a date value from Dublin Core date field.
+	 *
+	 * Handles various formats:
+	 * - Full dates: "April 8, 1905" -> timestamp
+	 * - Years only: "1920", "1950?", "c. 1930's" -> Jan 1 of that year
+	 * - Ranges: "1930-1940" -> earliest year
+	 * - Missing: "n.d." -> null
+	 *
+	 * @param string $date_str Raw date value.
+	 * @return int|false Unix timestamp or false if unparseable.
+	 */
+	protected function parse_date_value( string $date_str ) {
+		$date_str = trim( $date_str );
+		if ( '' === $date_str || 'n.d.' === $date_str ) {
+			return false;
+		}
+
+		// Try parsing as a complete date first (e.g., "April 8, 1905")
+		$timestamp = strtotime( $date_str );
+		if ( false !== $timestamp ) {
+			return $timestamp;
+		}
+
+		// Extract the first 4-digit year from the string
+		if ( preg_match( '/\b(\d{4})\b/', $date_str, $matches ) ) {
+			$year = (int) $matches[1];
+			if ( $year >= 1800 && $year <= 2100 ) {
+				return strtotime( 'January 1, ' . $year );
+			}
+		}
+
+		return false;
+	}
+
+	/**
+	 * Extract year from PastPerfect identifier.
+	 *
+	 * Examples:
+	 * - "2025.02.007" -> 2025
+	 * - "2014.6.2" -> 2014
+	 * - "invalid" -> false
+	 *
+	 * @param string $identifier Identifier string.
+	 * @return int|false Year or false if not found.
+	 */
+	protected function extract_year_from_identifier( string $identifier ): ?int {
+		if ( ! $identifier || ! preg_match( '/^(\d{4})\./', $identifier, $matches ) ) {
+			return null;
+		}
+
+		$year = (int) $matches[1];
+		return ( $year >= 1800 && $year <= 2100 ) ? $year : null;
+	}
+
+	/**
+	 * Check if a title is a single word and enhance it with description snippet.
+	 *
+	 * For titles that are single words (e.g., "photo", "photograph", "menu", "calendar"),
+	 * append the first 12 characters from the description to make the title more distinctive.
+	 *
+	 * @param string $title The title to check and potentially enhance.
+	 * @param string $description The description to extract snippet from.
+	 * @return string The original or enhanced title.
+	 */
+	protected function enhance_single_word_title( string $title, string $description ): string {
+		$title = trim( $title );
+		if ( '' === $title ) {
+			return $title;
+		}
+
+		// Check if title is a single word
+		if ( 1 !== str_word_count( $title ) ) {
+			return $title;
+		}
+
+		// Single-word title detected - enhance with description snippet
+		$description = trim( $description );
+		if ( '' === $description ) {
+			return $title;
+		}
+
+		// Extract first 12 characters from description
+		$snippet = substr( $description, 0, 12 );
+		return $title . ' (' . $snippet . ')';
+	}
+
 	public function save() {
 		// Determine whether this is a new or existing record.
 		$identifier = $this->get_dc_metadata( 'identifier' );
@@ -160,19 +345,23 @@ class Record {
 			// Build post data for WP.
 			$post_data = array(
 				'post_type' => 'ppwp_record',
-				'post_status' => 'publish',
+				'post_status' => $this->initial_post_status,
 				'comment_status' => 'open',
 			);
 		}
 
-		// post_title is a combination of identifier + title by default.
-		$title_parts = array( $this->get_dc_metadata( 'identifier' ) );
-
-		if ( $title = $this->get_dc_metadata( 'title' ) ) {
-			$title_parts[] = $title;
+		// post_title uses the title, enhanced for single-word titles.
+		$title = $this->get_dc_metadata( 'title' );
+		if ( $title ) {
+			// Enhance single-word titles with description snippet
+			$description = (string) $this->get_dc_metadata( 'description' );
+			$title = $this->enhance_single_word_title( $title, $description );
+		} else {
+			// Fall back to identifier if no title
+			$title = (string) $this->get_dc_metadata( 'identifier' );
 		}
 
-		$default_post_title = implode( ' - ', $title_parts );
+		$default_post_title = (string) $title;
 		$post_data['post_title'] = apply_filters( 'ppwp_record_post_title', $default_post_title, $this->dc_metadata, $this );
 
 		// post_content is description by default.
@@ -187,6 +376,12 @@ class Record {
 		$post_data['post_name'] = sanitize_title( $slug_source );
 
 		if ( $is_new ) {
+			// Set post_date for new records based on date metadata or identifier
+			$post_date = $this->get_post_date_from_metadata();
+			if ( $post_date ) {
+				$post_data['post_date'] = gmdate( 'Y-m-d H:i:s', $post_date );
+				$post_data['post_date_gmt'] = $post_data['post_date'];
+			}
 			$post_id = wp_insert_post( $post_data );
 		} else {
 			$post_id = wp_update_post( $post_data );

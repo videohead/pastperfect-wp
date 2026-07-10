@@ -46,6 +46,7 @@ class ImportSimulator {
 
 		$xml = isset( $assoc_args['xml'] ) ? (string) $assoc_args['xml'] : '';
 		if ( '' === $xml ) {
+			/** @phpstan-ignore-next-line */
 			\WP_CLI::error( 'Missing required --xml argument.' );
 			return;
 		}

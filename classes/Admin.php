@@ -109,12 +109,19 @@ class Admin {
 			return $identifier . ' - ' . $title;
 		}
 
+		// For 'first_title' mode, use the default_title which may have been enhanced
+		// with description snippets for single-word titles.
+		if ( '' !== $default_title ) {
+			return $default_title;
+		}
+
+		// Fallback if default_title is empty
 		$title = self::extract_first_scalar_value( $dc_metadata['title'] ?? '' );
 		if ( '' !== $title ) {
 			return $title;
 		}
 
-		return $default_title;
+		return self::extract_first_scalar_value( $dc_metadata['identifier'] ?? '' );
 	}
 
 	/**
@@ -1599,13 +1606,26 @@ class Admin {
 			$record = new Record();
 			$exists = (bool) $record->get_post_id_by_identifier( $parsed['identifier'] );
 			$record->set_up_from_raw_atts( $parsed['atts'] );
+
+			// Determine initial post status based on whether media will be found.
+			$import_settings = is_array( $run_data['import_settings'] ?? null ) ? $run_data['import_settings'] : array();
+			$post_status = self::will_record_have_media( $parsed['atts'], $import_settings ) ? 'publish' : 'draft';
+			if ( ! $exists ) {
+				$record->set_initial_post_status( $post_status );
+			}
+
 			$saved = $record->save();
 			if ( $saved ) {
 				self::handle_media_for_record(
 					absint( $saved ),
 					$parsed['atts'],
-					is_array( $run_data['import_settings'] ?? null ) ? $run_data['import_settings'] : array()
+					$import_settings
 				);
+
+				// If the record was created as draft but now has media, publish it.
+				if ( ! $exists && 'draft' === $post_status ) {
+					self::maybe_publish_record_if_has_media( absint( $saved ) );
+				}
 			}
 
 			$status = 'failed';
@@ -2166,6 +2186,74 @@ class Admin {
 			'media_source_directory' => $media_source_directory,
 			'media_remote_base_url' => isset( $settings['media_remote_base_url'] ) ? esc_url_raw( (string) $settings['media_remote_base_url'] ) : '',
 		);
+	}
+
+	/**
+	 * Determine if media references will be found for a record.
+	 *
+	 * Checks both explicit relation references and inferred references from identifier.
+	 *
+	 * @param array $atts The record attributes from XML.
+	 * @param array $settings The import settings.
+	 * @return bool
+	 */
+	private static function will_record_have_media( array $atts, array $settings ): bool {
+		$settings = self::normalize_import_settings( $settings );
+		if ( empty( $settings['import_media'] ) ) {
+			return false;
+		}
+
+		$references = self::extract_media_references( $atts['relation'] ?? array() );
+		if ( ! empty( $references ) ) {
+			return true;
+		}
+
+		$identifier_references = self::infer_media_references_from_identifier(
+			isset( $atts['identifier'] ) ? (string) $atts['identifier'] : '',
+			$settings['media_source_directory']
+		);
+		if ( ! empty( $identifier_references ) ) {
+			return true;
+		}
+
+		return false;
+	}
+
+	/**
+	 * Publish a draft record if it now has associated media.
+	 *
+	 * This is called after media has been processed for a record to automatically
+	 * publish draft records that now have media attachments.
+	 *
+	 * @param int $post_id The record post ID.
+	 */
+	private static function maybe_publish_record_if_has_media( int $post_id ): void {
+		$post = get_post( $post_id );
+		if ( ! $post || 'ppwp_record' !== $post->post_type || 'draft' !== $post->post_status ) {
+			return;
+		}
+
+		// Check if the post now has media in the relation metadata.
+		$relation_values = get_post_meta( $post_id, 'pastperfect_dc_relation', false );
+		if ( ! empty( $relation_values ) && is_array( $relation_values ) ) {
+			// Check if any values are non-empty.
+			$has_media = false;
+			foreach ( $relation_values as $value ) {
+				if ( ! empty( trim( (string) $value ) ) ) {
+					$has_media = true;
+					break;
+				}
+			}
+
+			if ( $has_media ) {
+				wp_update_post(
+					array(
+						'ID' => $post_id,
+						'post_status' => 'publish',
+					)
+				);
+			}
+		}
 	}
 
 	/**
