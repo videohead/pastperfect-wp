@@ -47,7 +47,7 @@ class Schema {
 	/**
 	 * Register post types.
 	 *
-	 * - ppwp_record is a record.
+	 * - archive_item is a record.
 	 *
 	 * @since 1.0.0
 	 */
@@ -58,7 +58,7 @@ class Schema {
 		$post_type_slug = (string) $settings['post_type_slug'];
 		$menu_label = __( 'PastPerfect', 'pastperfect-wp' );
 
-		register_post_type( 'ppwp_record', array(
+		register_post_type( 'archive_item', array(
 			'label' => $plural_label,
 			'labels' => array(
 				'name' => $plural_label,
@@ -82,14 +82,14 @@ class Schema {
 				'with_front' => false,
 			),
 			'show_in_rest' => true,
-			'supports' => array( 'title', 'comments' ),
+			'supports' => array( 'title', 'editor', 'excerpt','comments', 'thumbnail' ),
 		) );
 	}
 
 	/**
 	 * Register taxonomies.
 	 *
-	 * - ppwp_subject is Dublin Core <subject>
+	 * - archive_subject is Dublin Core <subject>
 	 *
 	 * @since 1.0.0
 	 */
@@ -98,7 +98,7 @@ class Schema {
 		$subject_slug = (string) $settings['subject_slug'];
 		$subject_public = ! empty( $settings['subject_public'] );
 
-		register_taxonomy( 'ppwp_subject', 'ppwp_record', array(
+		register_taxonomy( 'archive_subject', 'archive_item', array(
 			'public' => $subject_public,
 			'hierarchical' => true,
 			'show_ui' => true,
@@ -118,9 +118,9 @@ class Schema {
 		return array(
 			'post_type_label_plural' => 'PastPerfect Records',
 			'post_type_label_singular' => 'PastPerfect Record',
-			'post_type_slug' => 'ppwp_record',
-			'subject_slug' => 'ppwp-subject',
-			'subject_public' => false,
+			'post_type_slug' => 'archive_item',
+			'subject_slug' => 'archive-subject',
+			'subject_public' => true,
 		);
 	}
 

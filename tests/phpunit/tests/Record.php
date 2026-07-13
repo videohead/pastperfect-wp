@@ -74,7 +74,7 @@ class ppwp_Tests_Record extends WP_UnitTestCase {
 		$record->set_up_from_raw_atts( $this->data );
 		$post_id = $record->save();
 
-		$found = wp_get_object_terms( $post_id, 'ppwp_subject' );
+		$found = wp_get_object_terms( $post_id, 'archive_subject' );
 		$names = array();
 		foreach ( $found as $f ) {
 			$names[] = $f->name;

@@ -67,7 +67,7 @@ class ppwp_Tests_SyncCoordinator extends WP_UnitTestCase {
 
 		$post_id = $record->get_post_id_by_identifier( $identifier );
 		$this->assertNotEmpty( $post_id );
-		$this->assertSame( 'ppwp_record', get_post_type( $post_id ) );
+		$this->assertSame( 'archive_item', get_post_type( $post_id ) );
 	}
 
 	public function test_post_sync_updates_existing_record() {

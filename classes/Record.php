@@ -46,7 +46,7 @@ class Record {
 	);
 
 	protected static $taxonomy_elements = array(
-		'subject' => 'ppwp_subject',
+		'subject' => 'archive_subject',
 	);
 
 	protected $dc_metadata = array();
@@ -344,7 +344,7 @@ class Record {
 		} else {
 			// Build post data for WP.
 			$post_data = array(
-				'post_type' => 'ppwp_record',
+				'post_type' => 'archive_item',
 				'post_status' => $this->initial_post_status,
 				'comment_status' => 'open',
 			);
@@ -362,11 +362,11 @@ class Record {
 		}
 
 		$default_post_title = (string) $title;
-		$post_data['post_title'] = apply_filters( 'ppwp_record_post_title', $default_post_title, $this->dc_metadata, $this );
+		$post_data['post_title'] = apply_filters( 'archive_item_post_title', $default_post_title, $this->dc_metadata, $this );
 
 		// post_content is description by default.
 		$default_post_content = (string) $this->get_dc_metadata( 'description' );
-		$post_data['post_content'] = apply_filters( 'ppwp_record_post_content', $default_post_content, $this->dc_metadata, $this );
+		$post_data['post_content'] = apply_filters( 'archive_item_post_content', $default_post_content, $this->dc_metadata, $this );
 
 		// Keep slug aligned with visible title by default.
 		$slug_source = trim( (string) ( $post_data['post_title'] ?? '' ) );
@@ -388,14 +388,14 @@ class Record {
 		}
 
 		if ( $post_id ) {
-			$taxonomy_elements = apply_filters( 'ppwp_record_taxonomy_elements', self::get_taxonomy_elements(), $this );
+			$taxonomy_elements = apply_filters( 'archive_item_taxonomy_elements', self::get_taxonomy_elements(), $this );
 			if ( ! is_array( $taxonomy_elements ) ) {
 				$taxonomy_elements = self::get_taxonomy_elements();
 			}
 
 			foreach ( $taxonomy_elements as $element => $taxonomy ) {
 				$terms = $this->get_dc_metadata( $element, false );
-				$terms = apply_filters( 'ppwp_record_taxonomy_terms', $terms, $element, $taxonomy, $this );
+				$terms = apply_filters( 'archive_item_taxonomy_terms', $terms, $element, $taxonomy, $this );
 				wp_set_object_terms( $post_id, $terms, $taxonomy );
 				if ( class_exists( __NAMESPACE__ . '\\Admin' ) ) {
 					Admin::maybe_auto_tag_post_from_content( (int) $post_id, (string) $taxonomy );
@@ -438,7 +438,7 @@ class Record {
 	public function get_post_id_by_identifier( $identifier ) {
 		$found = get_posts( array(
 			'posts_per_page' => 1,
-			'post_type' => 'ppwp_record',
+			'post_type' => 'archive_item',
 			'post_status' => 'any',
 			'meta_query' => array(
 				array(
@@ -467,7 +467,7 @@ class Record {
 	protected function populate( $post_id ) {
 		$post = get_post( $post_id );
 
-		if ( ! $post || 'ppwp_record' !== $post->post_type ) {
+		if ( ! $post || 'archive_item' !== $post->post_type ) {
 			return;
 		}
 

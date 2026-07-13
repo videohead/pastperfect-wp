@@ -28,7 +28,7 @@ class MediaIndex {
 	 * ## OPTIONS
 	 *
 	 * [--post-type=<post-type>]
-	 * : Post type to process. Default: ppwp_record.
+	 * : Post type to process. Default: archive_item.
 	 *
 	 * [--statuses=<statuses>]
 	 * : Comma-separated statuses to scan. Default: publish,pending,future,private.
@@ -42,7 +42,7 @@ class MediaIndex {
 	public static function cli_draft_missing_media( array $args, array $assoc_args ): void {
 		unset( $args );
 
-		$post_type = isset( $assoc_args['post-type'] ) ? sanitize_key( (string) $assoc_args['post-type'] ) : 'ppwp_record';
+		$post_type = isset( $assoc_args['post-type'] ) ? sanitize_key( (string) $assoc_args['post-type'] ) : 'archive_item';
 		$statuses_raw = isset( $assoc_args['statuses'] ) ? (string) $assoc_args['statuses'] : 'publish,pending,future,private';
 		$statuses = array_values( array_filter( array_map( 'sanitize_key', array_map( 'trim', explode( ',', $statuses_raw ) ) ) ) );
 		$dry_run = isset( $assoc_args['dry-run'] ) ? filter_var( $assoc_args['dry-run'], FILTER_VALIDATE_BOOLEAN ) : false;

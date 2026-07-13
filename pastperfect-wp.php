@@ -92,7 +92,7 @@ function ppwp_php_admin_notice() {
 function ppwp_plugin_action_links( array $links ): array {
 	$import_url = add_query_arg(
 		array(
-			'post_type' => 'ppwp_record',
+			'post_type' => 'archive_item',
 			'page' => 'pastperfect-import-records',
 		),
 		admin_url( 'edit.php' )
@@ -100,7 +100,7 @@ function ppwp_plugin_action_links( array $links ): array {
 
 	$setup_url = add_query_arg(
 		array(
-			'post_type' => 'ppwp_record',
+			'post_type' => 'archive_item',
 			'page' => 'pastperfect-setup',
 		),
 		admin_url( 'edit.php' )

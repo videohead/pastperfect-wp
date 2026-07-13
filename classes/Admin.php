@@ -36,14 +36,14 @@ class Admin {
 		add_action( 'add_meta_boxes', array( $this, 'add_meta_boxes' ) );
 		add_action( 'admin_enqueue_scripts', array( $this, 'register_assets' ) );
 
-		add_filter( 'manage_ppwp_record_posts_columns', array( $this, 'add_column' ) );
-		add_filter( 'manage_edit-ppwp_record_sortable_columns', array( $this, 'add_sortable_column' ) );
-		add_action( 'manage_ppwp_record_posts_custom_column', array( $this, 'custom_column_content' ), 10, 2 );
+		add_filter( 'manage_archive_item_posts_columns', array( $this, 'add_column' ) );
+		add_filter( 'manage_edit-archive_item_sortable_columns', array( $this, 'add_sortable_column' ) );
+		add_action( 'manage_archive_item_posts_custom_column', array( $this, 'custom_column_content' ), 10, 2 );
 
-		add_filter( 'ppwp_record_post_title', array( $this, 'filter_record_post_title' ), 10, 3 );
-		add_filter( 'ppwp_record_post_content', array( $this, 'filter_record_post_content' ), 10, 3 );
-		add_filter( 'ppwp_record_taxonomy_elements', array( $this, 'filter_record_taxonomy_elements' ) );
-		add_filter( 'ppwp_record_taxonomy_terms', array( $this, 'filter_record_taxonomy_terms' ), 10, 4 );
+		add_filter( 'archive_item_post_title', array( $this, 'filter_record_post_title' ), 10, 3 );
+		add_filter( 'archive_item_post_content', array( $this, 'filter_record_post_content' ), 10, 3 );
+		add_filter( 'archive_item_taxonomy_elements', array( $this, 'filter_record_taxonomy_elements' ) );
+		add_filter( 'archive_item_taxonomy_terms', array( $this, 'filter_record_taxonomy_terms' ), 10, 4 );
 	}
 
 	/**
@@ -203,7 +203,7 @@ class Admin {
 			return array();
 		}
 
-		$taxonomies = array( 'ppwp_subject' );
+		$taxonomies = array( 'archive_subject' );
 		$type_taxonomy = isset( $behavior['type_taxonomy'] ) ? sanitize_key( (string) $behavior['type_taxonomy'] ) : '';
 		if ( '' !== $type_taxonomy ) {
 			$taxonomies[] = $type_taxonomy;
@@ -431,7 +431,7 @@ class Admin {
 
 		printf(
 			'<a href="%s">%s</a>',
-			esc_url( admin_url( 'edit.php?post_type=ppwp_record&page=pastperfect-import-records' ) ),
+			esc_url( admin_url( 'edit.php?post_type=archive_item&page=pastperfect-import-records' ) ),
 			esc_html__( '<<< Import another set of records', 'pastperfect-wp' )
 		);
 	}
@@ -506,7 +506,7 @@ class Admin {
 			set_transient( 'pastperfect_simulation_results_' . $key, $simulation, HOUR_IN_SECONDS );
 			$redirect_to = add_query_arg(
 				array(
-					'post_type' => 'ppwp_record',
+					'post_type' => 'archive_item',
 					'page' => 'pastperfect-import-records',
 					'simulation_key' => $key,
 				),
@@ -544,7 +544,7 @@ class Admin {
 	 */
 	public function register_admin_menu(): void {
 		add_submenu_page(
-			'edit.php?post_type=ppwp_record',
+			'edit.php?post_type=archive_item',
 			__( 'PastPerfect Setup', 'pastperfect-wp' ),
 			__( 'Setup', 'pastperfect-wp' ),
 			'manage_options',
@@ -553,7 +553,7 @@ class Admin {
 		);
 
 		add_submenu_page(
-			'edit.php?post_type=ppwp_record',
+			'edit.php?post_type=archive_item',
 			__( 'Import PastPerfect Records', 'pastperfect-wp' ),
 			__( 'Import', 'pastperfect-wp' ),
 			'manage_options',
@@ -562,7 +562,7 @@ class Admin {
 		);
 
 		add_submenu_page(
-			'edit.php?post_type=ppwp_record',
+			'edit.php?post_type=archive_item',
 			__( 'XML Mapping', 'pastperfect-wp' ),
 			__( 'XML Mapping', 'pastperfect-wp' ),
 			'manage_options',
@@ -795,7 +795,7 @@ class Admin {
 
 				<?php $this->print_import_results( $results ); ?>
 
-				<a href="<?php echo esc_url( admin_url( 'edit.php?post_type=ppwp_record&page=pastperfect-import-records' ) ); ?>"><?php esc_html_e( '<<< Import another set of records', 'pastperfect-wp' ); ?></a>
+				<a href="<?php echo esc_url( admin_url( 'edit.php?post_type=archive_item&page=pastperfect-import-records' ) ); ?>"><?php esc_html_e( '<<< Import another set of records', 'pastperfect-wp' ); ?></a>
 			<?php else : ?>
 				<div class="notice notice-info inline">
 					<p><?php esc_html_e( 'For detailed information about these settings, please see the README.md file', 'pastperfect-wp' ); ?></p>
@@ -812,7 +812,7 @@ class Admin {
 		$page = isset( $_GET['page'] ) ? sanitize_key( wp_unslash( $_GET['page'] ) ) : '';
 
 		return 'edit.php' === $pagenow
-			&& 'ppwp_record' === $post_type
+			&& 'archive_item' === $post_type
 			&& 'pastperfect-import-records' === $page;
 	}
 
@@ -823,7 +823,7 @@ class Admin {
 		$page = isset( $_GET['page'] ) ? sanitize_key( wp_unslash( $_GET['page'] ) ) : '';
 
 		return 'edit.php' === $pagenow
-			&& 'ppwp_record' === $post_type
+			&& 'archive_item' === $post_type
 			&& self::SETUP_PAGE_SLUG === $page;
 	}
 
@@ -843,7 +843,7 @@ class Admin {
 		wp_safe_redirect(
 			add_query_arg(
 				array(
-					'post_type' => 'ppwp_record',
+					'post_type' => 'archive_item',
 					'page' => self::SETUP_PAGE_SLUG,
 					'ppwp_setup_notice' => 'saved',
 				),
@@ -897,7 +897,7 @@ class Admin {
 						<td>
 							<label>
 								<input type="checkbox" name="ppwp-setup[subject_public]" value="1" <?php checked( ! empty( $settings['subject_public'] ) ); ?> />
-								<?php esc_html_e( 'Make ppwp_subject taxonomy publicly queryable.', 'pastperfect-wp' ); ?>
+								<?php esc_html_e( 'Make archive_subject taxonomy publicly queryable.', 'pastperfect-wp' ); ?>
 							</label>
 						</td>
 					</tr>
@@ -921,7 +921,7 @@ class Admin {
 		$page = isset( $_GET['page'] ) ? sanitize_key( wp_unslash( $_GET['page'] ) ) : '';
 
 		return 'edit.php' === $pagenow
-			&& 'ppwp_record' === $post_type
+			&& 'archive_item' === $post_type
 			&& self::XML_MAPPING_PAGE_SLUG === $page;
 	}
 
@@ -963,7 +963,7 @@ class Admin {
 		wp_safe_redirect(
 			add_query_arg(
 				array(
-					'post_type' => 'ppwp_record',
+					'post_type' => 'archive_item',
 					'page' => self::XML_MAPPING_PAGE_SLUG,
 					'ppwp_xml_notice' => $notice,
 				),
@@ -1019,7 +1019,7 @@ class Admin {
 		sort( $available_fields );
 		$import_url = add_query_arg(
 			array(
-				'post_type' => 'ppwp_record',
+				'post_type' => 'archive_item',
 				'page' => 'pastperfect-import-records',
 			),
 			admin_url( 'edit.php' )
@@ -1078,7 +1078,7 @@ class Admin {
 						<th scope="row"><label for="ppwp-xml-wp-type-taxonomy"><?php esc_html_e( 'Map type to taxonomy', 'pastperfect-wp' ); ?></label></th>
 						<td>
 							<select id="ppwp-xml-wp-type-taxonomy" name="ppwp-xml-wp[type_taxonomy]">
-								<option value="ppwp_subject" <?php selected( 'ppwp_subject', (string) $wp_behavior['type_taxonomy'] ); ?>><?php esc_html_e( 'Subject taxonomy (ppwp_subject)', 'pastperfect-wp' ); ?></option>
+								<option value="archive_subject" <?php selected( 'archive_subject', (string) $wp_behavior['type_taxonomy'] ); ?>><?php esc_html_e( 'Subject taxonomy (archive_subject)', 'pastperfect-wp' ); ?></option>
 								<option value="post_tag" <?php selected( 'post_tag', (string) $wp_behavior['type_taxonomy'] ); ?>><?php esc_html_e( 'WordPress tags (post_tag)', 'pastperfect-wp' ); ?></option>
 								<option value="" <?php selected( '', (string) $wp_behavior['type_taxonomy'] ); ?>><?php esc_html_e( 'Disable type taxonomy mapping', 'pastperfect-wp' ); ?></option>
 							</select>
@@ -1327,7 +1327,7 @@ class Admin {
 			'pastperfect-dc-metadata',
 			__( 'Dublin Core Metadata', 'pastperfect-wp' ),
 			array( $this, 'render_meta_box' ),
-			'ppwp_record',
+			'archive_item',
 			'advanced'
 		);
 	}
@@ -2044,7 +2044,7 @@ class Admin {
 		$behavior['post_content_field'] = $post_content_field;
 
 		$type_taxonomy = isset( $input['type_taxonomy'] ) ? sanitize_key( (string) $input['type_taxonomy'] ) : $defaults['type_taxonomy'];
-		$allowed_type_taxonomy = array( 'ppwp_subject', 'post_tag', '' );
+		$allowed_type_taxonomy = array( 'archive_subject', 'post_tag', '' );
 		$behavior['type_taxonomy'] = in_array( $type_taxonomy, $allowed_type_taxonomy, true ) ? $type_taxonomy : $defaults['type_taxonomy'];
 
 		$thumbnail_mode = isset( $input['thumbnail_mode'] ) ? sanitize_key( (string) $input['thumbnail_mode'] ) : $defaults['thumbnail_mode'];
@@ -2063,7 +2063,7 @@ class Admin {
 		return array(
 			'post_title_mode' => 'first_title',
 			'post_content_field' => 'description',
-			'type_taxonomy' => 'ppwp_subject',
+			'type_taxonomy' => 'archive_subject',
 			'thumbnail_mode' => 'first_if_missing',
 			'auto_tag_terms_from_content' => false,
 		);
@@ -2228,7 +2228,7 @@ class Admin {
 	 */
 	private static function maybe_publish_record_if_has_media( int $post_id ): void {
 		$post = get_post( $post_id );
-		if ( ! $post || 'ppwp_record' !== $post->post_type || 'draft' !== $post->post_status ) {
+		if ( ! $post || 'archive_item' !== $post->post_type || 'draft' !== $post->post_status ) {
 			return;
 		}
 
@@ -2854,7 +2854,7 @@ class Admin {
 		$redirect_to = add_query_arg(
 			array_filter(
 				array(
-					'post_type' => 'ppwp_record',
+					'post_type' => 'archive_item',
 					'page' => 'pastperfect-import-records',
 					'pastperfect_notice' => $notice,
 					'pastperfect_notice_text' => $notice_text,

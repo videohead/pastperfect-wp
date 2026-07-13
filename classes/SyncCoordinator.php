@@ -258,7 +258,7 @@ class SyncCoordinator {
 		do {
 			$post_ids = get_posts(
 				array(
-					'post_type' => 'ppwp_record',
+					'post_type' => 'archive_item',
 					'post_status' => 'any',
 					'posts_per_page' => 200,
 					'paged' => $page,
