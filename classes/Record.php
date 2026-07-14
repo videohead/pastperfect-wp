@@ -414,7 +414,7 @@ class Record {
 				$terms = apply_filters( 'archive_item_taxonomy_terms', $terms, $element, $taxonomy, $this );
 				wp_set_object_terms( $post_id, $terms, $taxonomy );
 				if ( class_exists( __NAMESPACE__ . '\\Admin' ) ) {
-					Admin::maybe_auto_tag_post_from_content( (int) $post_id, (string) $taxonomy );
+					Admin::force_auto_tag_post_from_content( (int) $post_id, (string) $taxonomy );
 				}
 			}
 

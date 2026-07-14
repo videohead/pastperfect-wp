@@ -8,6 +8,7 @@ class App {
 		ImportSimulator::bootstrap();
 		ImportCLI::bootstrap();
 		MediaIndex::bootstrap();
+		RestoreTaxonomiesCLI::bootstrap();
 
 		$admin = new Admin();
 		$admin->set_up_hooks();

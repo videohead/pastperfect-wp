@@ -317,6 +317,88 @@ class Admin {
 	}
 
 	/**
+	 * Force-tag a post from its content regardless of the auto-tag behavior setting.
+	 * This will detect existing taxonomy terms present in the post title/description
+	 * and add them to the post.
+	 */
+	public static function force_auto_tag_post_from_content( int $post_id, string $taxonomy ): void {
+		if ( $post_id <= 0 || ! taxonomy_exists( $taxonomy ) ) {
+			return;
+		}
+
+		$post = get_post( $post_id );
+		if ( ! $post ) {
+			return;
+		}
+
+		$source_text = self::build_term_detection_source_text_for_post( $post );
+		if ( '' === $source_text ) {
+			return;
+		}
+
+		$existing = wp_get_object_terms( $post_id, $taxonomy, array( 'fields' => 'names' ) );
+		$existing = is_wp_error( $existing ) ? array() : (array) $existing;
+
+		// Use the same matching logic as detect_taxonomy_terms_in_text but bypass behavior gating.
+		$matches = array();
+		$text = self::normalize_term_match_text( $source_text );
+		if ( '' === $text ) {
+			return;
+		}
+
+		$terms = get_terms(
+			array(
+				'taxonomy' => $taxonomy,
+				'hide_empty' => false,
+			)
+		);
+
+		if ( is_wp_error( $terms ) || ! is_array( $terms ) ) {
+			$terms = array();
+		}
+
+		$candidates = array();
+		foreach ( $terms as $term ) {
+			if ( ! $term instanceof \WP_Term ) {
+				continue;
+			}
+
+			$name = trim( (string) $term->name );
+			if ( mb_strlen( $name ) < 3 ) {
+				continue;
+			}
+
+			$candidates[] = $name;
+		}
+
+		usort(
+			$candidates,
+			static function ( string $a, string $b ): int {
+				return mb_strlen( $b ) <=> mb_strlen( $a );
+			}
+		);
+
+		foreach ( $candidates as $term_name ) {
+			$needle = self::normalize_term_match_text( $term_name );
+			if ( '' === $needle ) {
+				continue;
+			}
+
+			$pattern = '/(^|[^[:alnum:]])' . preg_quote( $needle, '/' ) . '([^[:alnum:]]|$)/ui';
+			if ( 1 === preg_match( $pattern, $text ) ) {
+				$matches[] = $term_name;
+			}
+		}
+
+		$merged = array_values( array_unique( array_merge( $existing, $matches ), SORT_REGULAR ) );
+		if ( empty( $merged ) ) {
+			return;
+		}
+
+		wp_set_object_terms( $post_id, $merged, $taxonomy );
+	}
+
+	/**
 	 * @return array<int,string>
 	 */
 	public static function get_auto_tag_taxonomies(): array {
