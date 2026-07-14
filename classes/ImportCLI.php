@@ -147,6 +147,7 @@ class ImportCLI {
 		$total_created = 0;
 		$total_updated = 0;
 		$total_failed = 0;
+		$total_media_found = 0;
 		$last_processed = 0;
 
 		$progressbar = \WP_CLI\Utils\make_progress_bar(
@@ -190,6 +191,11 @@ class ImportCLI {
 					}
 				}
 
+				// accumulate media_found if reported by processor
+				if ( isset( $result['media_found'] ) ) {
+					$total_media_found += intval( $result['media_found'] );
+				}
+
 				$total_created += $created;
 				$total_updated += $updated;
 				$total_failed += $failed;
@@ -204,6 +210,7 @@ class ImportCLI {
 					'created' => $total_created,
 					'updated' => $total_updated,
 					'failed' => $total_failed,
+					'media_found' => $total_media_found,
 				);
 
 				if ( $current_state['last'] >= $current_state['count'] ) {
@@ -241,6 +248,10 @@ class ImportCLI {
 			array(
 				'metric' => 'Total',
 				'count' => (string) ( ( $final_state['counts']['created'] ?? 0 ) + ( $final_state['counts']['updated'] ?? 0 ) ),
+			),
+			array(
+				'metric' => 'Media Found',
+				'count' => (string) ( $final_state['counts']['media_found'] ?? $total_media_found ),
 			),
 		);
 

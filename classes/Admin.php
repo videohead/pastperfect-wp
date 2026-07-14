@@ -26,6 +26,128 @@ class Admin {
 	}
 
 	/**
+	 * Process import chunk by scanning the source file for individual record elements
+	 * and parsing them one at a time. This is a tolerant fallback for malformed
+	 * XML documents that prevent XMLReader from opening the file.
+	 *
+	 * @return array{current:int,results:array<int,array{identifier:string,status:string}>}
+	 */
+	private static function process_import_chunk_data_streaming( array $run_data, int $last, int $increment = 5 ): array {
+		$xml_file = $run_data['xml'] ?? '';
+		$record_element = $run_data['record_element'] ?? 'record';
+		if ( ! $xml_file || ! is_readable( $xml_file ) ) {
+			return array(
+				'current' => $last,
+				'results' => array(),
+			);
+		}
+
+		$contents = @file_get_contents( $xml_file );
+		if ( false === $contents ) {
+			return array(
+				'current' => $last,
+				'results' => array(),
+			);
+		}
+
+		// Basic detection of record element variants if not provided.
+		if ( empty( $record_element ) ) {
+			if ( preg_match( '/<dc-record[\s>]/i', $contents ) ) {
+				$record_element = 'dc-record';
+			} elseif ( preg_match( '/<record[\s>]/i', $contents ) ) {
+				$record_element = 'record';
+			} else {
+				return array(
+					'current' => $last,
+					'results' => array(),
+				);
+			}
+		}
+
+		$results = array();
+		$current = 0;
+		$media_found = 0;
+		$offset = 0;
+		$open_tag = '<' . $record_element;
+		$close_tag = '</' . $record_element . '>';
+		$len_close = strlen( $close_tag );
+
+		while ( ( $start = stripos( $contents, $open_tag, $offset ) ) !== false ) {
+			$end = stripos( $contents, $close_tag, $start );
+			if ( $end === false ) {
+				break;
+			}
+			$end_pos = $end + $len_close;
+			$record_xml = substr( $contents, $start, $end_pos - $start );
+
+			$current++;
+			if ( $current <= $last ) {
+				$offset = $end_pos;
+				continue;
+			}
+
+			if ( $current > ( $last + $increment ) ) {
+				break;
+			}
+
+			// Sanitize record XML and try to parse as a self-contained fragment.
+			$record_xml = self::remove_invalid_xml_chars( $record_xml );
+			$wrapped = '<?xml version="1.0" encoding="utf-8"?><root>' . $record_xml . '</root>';
+			libxml_use_internal_errors( true );
+			$sx = @simplexml_load_string( $wrapped );
+			$errors = libxml_get_errors();
+			libxml_clear_errors();
+			if ( ! $sx || ! $sx->children() ) {
+				$results[] = array( 'identifier' => '', 'status' => 'failed' );
+				$offset = $end_pos;
+				continue;
+			}
+
+			$node = $sx->children()[0];
+				$parsed = self::build_record_atts_from_node( $node );
+			if ( '' === trim( (string) $parsed['identifier'] ) ) {
+				$results[] = array( 'identifier' => '', 'status' => 'failed' );
+				$offset = $end_pos;
+				continue;
+			}
+
+				$record = new Record();
+				$exists = (bool) $record->get_post_id_by_identifier( $parsed['identifier'] );
+				$record->set_up_from_raw_atts( $parsed['atts'] );
+
+				$import_settings = is_array( $run_data['import_settings'] ?? null ) ? $run_data['import_settings'] : array();
+				$post_status = self::will_record_have_media( $parsed['atts'], $import_settings ) ? 'publish' : 'draft';
+				if ( 'publish' === $post_status ) {
+					$media_found++;
+				}
+			if ( ! $exists ) {
+				$record->set_initial_post_status( $post_status );
+			}
+
+			$saved = $record->save();
+			if ( $saved ) {
+				self::handle_media_for_record( absint( $saved ), $parsed['atts'], $import_settings );
+
+				if ( ! $exists && 'draft' === $post_status ) {
+					self::maybe_publish_record_if_has_media( absint( $saved ) );
+				}
+			}
+
+			$status = $saved ? ( $exists ? 'updated' : 'created' ) : 'failed';
+			$results[] = array( 'identifier' => $parsed['identifier'], 'status' => $status );
+
+			$offset = $end_pos;
+		}
+
+		$run_data['last'] = $current;
+		if ( ! empty( $run_data['run'] ) ) {
+			update_option( self::get_run_key( (string) $run_data['run'] ), $run_data, false );
+		}
+
+		return array( 'current' => $current, 'results' => $results, 'media_found' => $media_found );
+	}
+
+	/**
 	 * Hook into WP.
 	 */
 	public function set_up_hooks(): void {
@@ -1425,8 +1547,17 @@ class Admin {
 		}
 
 		$reader = new \XMLReader();
+		$prev_libxml = libxml_use_internal_errors( true );
 		if ( ! $reader->open( $parser_xml_path ) ) {
-			return new \WP_Error( 'pastperfect_xml_open_failed', __( 'Could not open XML source file.', 'pastperfect-wp' ) );
+			$errors = libxml_get_errors();
+			libxml_clear_errors();
+			libxml_use_internal_errors( $prev_libxml );
+			$msgs = array();
+			foreach ( $errors as $err ) {
+				$msgs[] = trim( (string) $err->message );
+			}
+			$detail = $msgs ? implode( '; ', $msgs ) : 'Could not open XML source file.';
+			return new \WP_Error( 'pastperfect_xml_open_failed', sprintf( __( 'The XML file could be opened but is not well-formed. %s Source path: %s. Source provider: xml.', 'pastperfect-wp' ), $detail, $xml_path ) );
 		}
 
 		$record_element = self::find_record_element( $reader );
@@ -1485,9 +1616,20 @@ class Admin {
 			return new \WP_Error( 'pastperfect_xml_missing', __( 'Could not read XML source file.', 'pastperfect-wp' ) );
 		}
 
-		if ( $normalized === $payload ) {
-			return $xml_path;
-		}
+		// Remove invalid XML control characters.
+		$normalized = self::remove_invalid_xml_chars( $normalized );
+
+		// Remove any leading garbage before the first '<' to ensure XML prolog starts at byte 0.
+		$normalized = preg_replace( '/^[^<]*/', '', $normalized );
+
+		// Strip XML declarations to avoid multiple prologs when wrapping.
+		$normalized = preg_replace( '/<\?xml[^>]*\?>/i', '', $normalized );
+
+		// Always wrap content in a single root element so XMLReader can parse fragments
+		// exported from PastPerfect which may contain multiple top-level nodes.
+		// Use actual newline characters (not literal backslash-n) when writing
+		// the normalized file so the XML prolog is at the absolute start.
+		$wrapped = "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<ppwp-root>" . "\n" . $normalized . "\n</ppwp-root>";
 
 		$uploads = wp_get_upload_dir();
 		$base_dir = isset( $uploads['basedir'] ) ? (string) $uploads['basedir'] : '';
@@ -1496,7 +1638,7 @@ class Admin {
 		}
 
 		$normalized_path = trailingslashit( $base_dir ) . 'pastperfect-sync-source-normalized.xml';
-		$written = file_put_contents( $normalized_path, $normalized );
+		$written = file_put_contents( $normalized_path, $wrapped );
 		if ( false === $written ) {
 			return new \WP_Error( 'pastperfect_xml_open_failed', __( 'Could not prepare normalized XML source file.', 'pastperfect-wp' ) );
 		}
@@ -1512,6 +1654,19 @@ class Admin {
 
 		$payload = ltrim( $payload );
 		return $payload;
+	}
+
+	/**
+	 * Remove XML-invalid control characters from a string.
+	 * Keeps TAB(0x09), LF(0x0A) and CR(0x0D).
+	 */
+	private static function remove_invalid_xml_chars( string $value ): string {
+		// Remove C0 control chars except 0x09,0x0A,0x0D
+		$clean = preg_replace('/[\x00-\x08\x0B\x0C\x0E-\x1F]/', '', $value);
+		if ( false === $clean ) {
+			return $value;
+		}
+		return $clean;
 	}
 
 	/**
@@ -1547,8 +1702,10 @@ class Admin {
 			);
 		}
 
-		$reader = new \XMLReader();
-		if ( ! $reader->open( $xml_file ) ) {
+		// Normalize file for XMLReader: remove invalid control chars that break the parser.
+		$tmp_normalized = '';
+		$file_contents = @file_get_contents( $xml_file );
+		if ( false === $file_contents ) {
 			return array(
 				'current' => $last,
 				'results' => array(
@@ -1560,11 +1717,34 @@ class Admin {
 			);
 		}
 
+		$normalized_contents = self::sanitize_xml_payload( $file_contents );
+		$normalized_contents = self::remove_invalid_xml_chars( $normalized_contents );
+
+		$uploads = wp_get_upload_dir();
+		$tmp_normalized = trailingslashit( (string) $uploads['basedir'] ) . 'pastperfect-sync-source-normalized.xml';
+		$written = @file_put_contents( $tmp_normalized, $normalized_contents );
+
+		$reader = new \XMLReader();
+		$prev_internal_errors = libxml_use_internal_errors( true );
+		if ( ! $reader->open( $tmp_normalized ) ) {
+			// If XMLReader cannot open the normalized file (still malformed),
+			// fall back to a file-level streaming parser that extracts individual
+			// record elements and parses them one-by-one. This is more tolerant
+			// of broken prologs and stray content in PastPerfect exports.
+			libxml_clear_errors();
+			libxml_use_internal_errors( $prev_internal_errors );
+			if ( $tmp_normalized && is_readable( $tmp_normalized ) ) {
+				@unlink( $tmp_normalized );
+			}
+			return self::process_import_chunk_data_streaming( $run_data, $last, $increment );
+		}
+
 		$doc = new \DOMDocument();
 
-		while ( $reader->read() && $record_element !== $reader->name ) {
-			// No-op, advance reader.
-		}
+		try {
+			while ( $reader->read() && $record_element !== $reader->name ) {
+				// No-op, advance reader.
+			}
 
 		$results = array();
 		$current = 0;
@@ -1582,7 +1762,27 @@ class Admin {
 				continue;
 			}
 
-			$node = simplexml_import_dom( $doc->importNode( $reader->expand(), true ) );
+			$expanded = self::safe_xmlreader_expand( $reader );
+			if ( ! $expanded ) {
+				$results[] = array(
+					'identifier' => '',
+					'status' => 'failed',
+				);
+				$reader->next( $record_element );
+				continue;
+			}
+
+			$imported = self::safe_dom_import_node( $doc, $expanded );
+			if ( ! $imported ) {
+				$results[] = array(
+					'identifier' => '',
+					'status' => 'failed',
+				);
+				$reader->next( $record_element );
+				continue;
+			}
+
+			$node = simplexml_import_dom( $imported );
 			if ( ! $node ) {
 				$results[] = array(
 					'identifier' => '',
@@ -1609,6 +1809,9 @@ class Admin {
 			// Determine initial post status based on whether media will be found.
 			$import_settings = is_array( $run_data['import_settings'] ?? null ) ? $run_data['import_settings'] : array();
 			$post_status = self::will_record_have_media( $parsed['atts'], $import_settings ) ? 'publish' : 'draft';
+			if ( 'publish' === $post_status ) {
+				$media_found++;
+			}
 			if ( ! $exists ) {
 				$record->set_initial_post_status( $post_status );
 			}
@@ -1640,17 +1843,24 @@ class Admin {
 			$reader->next( $record_element );
 		}
 
-		$reader->close();
+			$run_data['last'] = $current;
+			if ( ! empty( $run_data['run'] ) ) {
+				update_option( self::get_run_key( (string) $run_data['run'] ), $run_data, false );
+			}
 
-		$run_data['last'] = $current;
-		if ( ! empty( $run_data['run'] ) ) {
-			update_option( self::get_run_key( (string) $run_data['run'] ), $run_data, false );
+			return array(
+				'current' => $current,
+				'results' => $results,
+				'media_found' => $media_found,
+			);
+		} finally {
+			libxml_clear_errors();
+			libxml_use_internal_errors( $prev_internal_errors );
+			@$reader->close();
+			if ( isset( $tmp_normalized ) && is_readable( $tmp_normalized ) ) {
+				@unlink( $tmp_normalized );
+			}
 		}
-
-		return array(
-			'current' => $current,
-			'results' => $results,
-		);
 	}
 
 	/**
@@ -1827,6 +2037,40 @@ class Admin {
 			'identifier' => $identifier,
 			'atts' => $atts,
 		);
+	}
+
+	/**
+	 * Safely call XMLReader::expand() while suppressing PHP warnings.
+	 */
+	private static function safe_xmlreader_expand( \XMLReader $reader ) {
+		$prev_handler = set_error_handler( static function () {
+			// ignore warnings
+			return true;
+		} );
+		try {
+			$expanded = $reader->expand();
+		} catch ( \Throwable $e ) {
+			$expanded = false;
+		}
+		restore_error_handler();
+		return $expanded;
+	}
+
+	/**
+	 * Safely call DOMDocument::importNode() while suppressing PHP warnings.
+	 */
+	private static function safe_dom_import_node( \DOMDocument $doc, $node ) {
+		$prev_handler = set_error_handler( static function () {
+			// ignore warnings
+			return true;
+		} );
+		try {
+			$imported = $doc->importNode( $node, true );
+		} catch ( \Throwable $e ) {
+			$imported = false;
+		}
+		restore_error_handler();
+		return $imported;
 	}
 
 	/**

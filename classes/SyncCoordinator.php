@@ -207,6 +207,7 @@ class SyncCoordinator {
 				'created' => 0,
 				'updated' => 0,
 				'failed' => 0,
+				'media_found' => 0,
 			),
 			'last_error' => '',
 		);
@@ -319,7 +320,9 @@ class SyncCoordinator {
 			}
 
 			$job_state['last'] = absint( $result['current'] );
-			$job_state['counts'] = self::merge_counts( $job_state['counts'], $result['results'] );
+					$job_state['counts'] = self::merge_counts( $job_state['counts'], $result['results'] );
+					// Merge media_found count if provided by the import processor
+					$job_state['counts']['media_found'] = ( isset( $job_state['counts']['media_found'] ) ? intval( $job_state['counts']['media_found'] ) : 0 ) + ( isset( $result['media_found'] ) ? intval( $result['media_found'] ) : 0 );
 			$job_state['last_error'] = '';
 
 			if ( $job_state['last'] >= absint( $run_data['count'] ) ) {
@@ -339,6 +342,24 @@ class SyncCoordinator {
 		$job_state['status'] = $status;
 		$job_state['finished_at'] = current_time( 'mysql', true );
 		update_option( self::OPTION_JOB_STATE, $job_state, false );
+
+		// Write a sync summary to the sync log
+		try {
+			$context = array(
+				'run' => $job_state['run'] ?? '',
+				'status' => $job_state['status'] ?? '',
+				'total_records' => isset( $job_state['count'] ) ? intval( $job_state['count'] ) : 0,
+				'attempted' => isset( $job_state['last'] ) ? intval( $job_state['last'] ) : 0,
+				'media_found' => isset( $job_state['counts']['media_found'] ) ? intval( $job_state['counts']['media_found'] ) : 0,
+				'counts' => $job_state['counts'] ?? array(),
+				'started_at' => $job_state['started_at'] ?? '',
+				'finished_at' => $job_state['finished_at'] ?? '',
+			);
+			Sync_Logger::write( 'info', 'sync_summary', $context );
+		} catch ( \Throwable $e ) {
+			// Swallow logging errors so job finish isn't blocked
+		}
+
 		self::unlock();
 	}
 

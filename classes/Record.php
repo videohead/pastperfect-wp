@@ -383,8 +383,24 @@ class Record {
 				$post_data['post_date_gmt'] = $post_data['post_date'];
 			}
 			$post_id = wp_insert_post( $post_data );
+			if ( ! $post_id || is_wp_error( $post_id ) ) {
+				self::write_save_error_debug( array(
+					'time' => gmdate( 'c' ),
+					'action' => 'insert',
+					'post_data' => $post_data,
+					'result' => $post_id,
+				) );
+			}
 		} else {
 			$post_id = wp_update_post( $post_data );
+			if ( ! $post_id || is_wp_error( $post_id ) ) {
+				self::write_save_error_debug( array(
+					'time' => gmdate( 'c' ),
+					'action' => 'update',
+					'post_data' => $post_data,
+					'result' => $post_id,
+				) );
+			}
 		}
 
 		if ( $post_id ) {
@@ -435,6 +451,33 @@ class Record {
 		return $post_id;
 	}
 
+	/**
+	 * Append save error debug info to uploads/pastperfect-import-errors.json.
+	 */
+	private static function write_save_error_debug( array $data ): void {
+		try {
+			$uploads = wp_get_upload_dir();
+			if ( empty( $uploads['basedir'] ) ) {
+				return;
+			}
+			$path = trailingslashit( (string) $uploads['basedir'] ) . 'pastperfect-import-errors.json';
+			$existing = array();
+			if ( is_readable( $path ) ) {
+				$contents = file_get_contents( $path );
+				if ( false !== $contents ) {
+					$decoded = json_decode( $contents, true );
+					if ( is_array( $decoded ) ) {
+						$existing = $decoded;
+					}
+				}
+			}
+			$existing[] = $data;
+			@file_put_contents( $path, wp_json_encode( $existing, JSON_PRETTY_PRINT ) );
+		} catch ( \Throwable $e ) {
+			// Swallow errors to avoid interfering with import.
+		}
+	}
+
 	public function get_post_id_by_identifier( $identifier ) {
 		$found = get_posts( array(
 			'posts_per_page' => 1,
@@ -466,6 +509,10 @@ class Record {
 	 */
 	protected function populate( $post_id ) {
 		$post = get_post( $post_id );
+
+		if ( ! $post ) {
+			return;
+		}
 
 		if ( ! $post || 'archive_item' !== $post->post_type ) {
 			return;

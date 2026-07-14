@@ -119,6 +119,11 @@ class ImportSimulator {
 		$start = microtime( true );
 
 		if ( ! is_readable( $xml_path ) ) {
+			self::write_simulator_debug( array(
+				'error' => 'XML file is not readable: ' . $xml_path,
+				'xml_path' => $xml_path,
+				'time' => gmdate( 'c' ),
+			) );
 			return array( 'error' => 'XML file is not readable: ' . $xml_path );
 		}
 
@@ -137,6 +142,11 @@ class ImportSimulator {
 
 		$xml_payload = file_get_contents( $xml_path );
 		if ( false === $xml_payload ) {
+			self::write_simulator_debug( array(
+				'error' => 'Could not read XML file: ' . $xml_path,
+				'xml_path' => $xml_path,
+				'time' => gmdate( 'c' ),
+			) );
 			return array( 'error' => 'Could not read XML file: ' . $xml_path );
 		}
 
@@ -147,6 +157,11 @@ class ImportSimulator {
 		if ( ! $reader->XML( $xml_payload ) ) {
 			libxml_clear_errors();
 			libxml_use_internal_errors( false );
+			self::write_simulator_debug( array(
+				'error' => 'Could not open XML file: ' . $xml_path,
+				'xml_path' => $xml_path,
+				'time' => gmdate( 'c' ),
+			) );
 			return array( 'error' => 'Could not open XML file: ' . $xml_path );
 		}
 
@@ -155,6 +170,11 @@ class ImportSimulator {
 			$reader->close();
 			libxml_clear_errors();
 			libxml_use_internal_errors( false );
+			self::write_simulator_debug( array(
+				'error' => 'No supported record element found (expected record or dc-record).',
+				'xml_path' => $xml_path,
+				'time' => gmdate( 'c' ),
+			) );
 			return array( 'error' => 'No supported record element found (expected record or dc-record).' );
 		}
 
@@ -290,7 +310,7 @@ class ImportSimulator {
 		arsort( $subject_counts );
 		$media['missing_reference_samples'] = array_values( array_unique( $media_missing_samples ) );
 
-		return array(
+		$result = array(
 			'xml_path' => $xml_path,
 			'record_element' => $record_element,
 			'totals' => $totals,
@@ -300,6 +320,48 @@ class ImportSimulator {
 			'top_subjects' => array_slice( $subject_counts, 0, 20, true ),
 			'duration_seconds' => round( microtime( true ) - $start, 3 ),
 		);
+
+		// Write debug snapshot for diagnostics
+		self::write_simulator_debug( array(
+			'time' => gmdate( 'c' ),
+			'xml_path' => $xml_path,
+			'record_element' => $record_element,
+			'sample_identifiers' => array_slice( array_keys( $ids_seen ), 0, 20 ),
+			'settings' => $settings,
+			'totals' => $totals,
+			'media' => $media,
+			'field_usage_top' => array_slice( $field_counts, 0, 20, true ),
+			'debug_result' => $result,
+		) );
+
+		return $result;
+	}
+
+	/**
+	 * Write a debug snapshot to the uploads directory for offline inspection.
+	 */
+	private static function write_simulator_debug( array $data ): void {
+		try {
+			$uploads = wp_get_upload_dir();
+			if ( empty( $uploads['basedir'] ) ) {
+				return;
+			}
+			$path = trailingslashit( (string) $uploads['basedir'] ) . 'pastperfect-import-debug.json';
+			$existing = array();
+			if ( is_readable( $path ) ) {
+				$contents = file_get_contents( $path );
+				if ( false !== $contents ) {
+					$decoded = json_decode( $contents, true );
+					if ( is_array( $decoded ) ) {
+						$existing = $decoded;
+					}
+				}
+			}
+			$existing[] = $data;
+			@file_put_contents( $path, wp_json_encode( $existing, JSON_PRETTY_PRINT ) );
+		} catch ( \Throwable $e ) {
+			// Swallow errors - debugging should not break import simulation.
+		}
 	}
 
 	private static function find_record_element( \XMLReader $reader ): string {
